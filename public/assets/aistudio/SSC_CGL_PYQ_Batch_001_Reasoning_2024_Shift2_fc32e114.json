@@ -1,0 +1,235 @@
+{
+  "batch_id": "SSC-CGL-PYQ-BATCH-001",
+  "exam": "SSC CGL",
+  "year": 2024,
+  "tier": "Tier-I",
+  "exam_date": "2024-09-24",
+  "shift": "Shift 2",
+  "shift_time_local": "12:30 PM–1:30 PM IST",
+  "subject": "General Intelligence and Reasoning",
+  "question_type": "authentic_archived_pyq",
+  "generated_practice_included": false,
+  "verification_note": "Question stems/options and answer choices were cross-checked across multiple shift-specific PYQ archives; explanations were independently recalculated. SSC's final response-sheet/answer-key access is candidate-login restricted, so this batch does not claim direct public retrieval of SSC's final key.",
+  "questions": [
+    {
+      "id": "CGL24-T1-240924-S2-GI-B001-Q01",
+      "topic": "Blood relations / coded relations",
+      "question": "Symbols are defined as follows: A + B means A is B's mother; A − B means A is B's brother; A × B means A is B's wife; A ÷ B means A is B's father. Given M + Q − R + K − Y, how is M related to Y?",
+      "options": [
+        {
+          "label": "A",
+          "text": "Mother"
+        },
+        {
+          "label": "B",
+          "text": "Father's mother"
+        },
+        {
+          "label": "C",
+          "text": "Mother's mother"
+        },
+        {
+          "label": "D",
+          "text": "Brother's wife"
+        }
+      ],
+      "correct_option": "C",
+      "correct_answer": "Mother's mother (maternal grandmother)",
+      "explanation": "M is Q's mother. Q is R's brother, so M is also R's mother. R is K's mother, and K is Y's brother; therefore R is Y's mother. M is R's mother, making M Y's maternal grandmother.",
+      "source_urls": [
+        "https://wikistudy.in/exams/ssc-cgl/pyq-paper-2024-pdf/24-sep-12-30-pm",
+        "https://prepp.in/paper/ssc-cgl-tier-1-question-paper-24-sep-2024-shift-2-67da7ba01b08dedf8af4ff5d",
+        "https://parikshasaathi.com/exams/ssc-cgl/question-papers/cgl-2024-tier-i-24-sep-2024-shift-2/"
+      ]
+    },
+    {
+      "id": "CGL24-T1-240924-S2-GI-B001-Q02",
+      "topic": "Mathematical operations / sign interchange",
+      "question": "Which two signs must be swapped to make 29 × 145 + 5 − 640 ÷ 15 = 216 correct?",
+      "options": [
+        {
+          "label": "A",
+          "text": "− and ×"
+        },
+        {
+          "label": "B",
+          "text": "÷ and +"
+        },
+        {
+          "label": "C",
+          "text": "− and +"
+        },
+        {
+          "label": "D",
+          "text": "÷ and ×"
+        }
+      ],
+      "correct_option": "B",
+      "correct_answer": "÷ and +",
+      "explanation": "After swapping ÷ and +, the expression becomes 29 × 145 ÷ 5 − 640 + 15. Since 145 ÷ 5 = 29, this is 29 × 29 − 640 + 15 = 841 − 640 + 15 = 216.",
+      "source_urls": [
+        "https://wikistudy.in/exams/ssc-cgl/pyq-paper-2024-pdf/24-sep-12-30-pm",
+        "https://www.unlockias.in/ssc-cgl-question-paper/ssc-cgl-2024-tier-1-24-september-shift-2/q5-two-signs-should-interchanged-make-following-equation",
+        "https://www.nextgenpsc.com/ssc/cgl/previous-year-papers/cgl-2024-09-24-s2"
+      ]
+    },
+    {
+      "id": "CGL24-T1-240924-S2-GI-B001-Q03",
+      "topic": "Alphabetical arrangement / unchanged positions",
+      "question": "How many letters stay in their original positions when ASTEROID is sorted alphabetically?",
+      "options": [
+        {
+          "label": "A",
+          "text": "None"
+        },
+        {
+          "label": "B",
+          "text": "Two"
+        },
+        {
+          "label": "C",
+          "text": "One"
+        },
+        {
+          "label": "D",
+          "text": "Three"
+        }
+      ],
+      "correct_option": "C",
+      "correct_answer": "One",
+      "explanation": "Alphabetical order is A D E I O R S T. Comparing this with A S T E R O I D, only A remains in the first position.",
+      "source_urls": [
+        "https://wikistudy.in/exams/ssc-cgl/pyq-paper-2024-pdf/24-sep-12-30-pm",
+        "https://www.unlockias.in/ssc-cgl-question-paper/ssc-cgl-2024-tier-1-24-september-shift-2/q21-position-how-many-letters-will-remain-unchanged",
+        "https://questions.examside.com/past-years/ssc/question/pthe-positions-of-how-many-letters-will-remain-unchanged-ssc-cgl-tier-i-general-intelligence-and-reasoning-4szi77ymzmikxum0"
+      ]
+    },
+    {
+      "id": "CGL24-T1-240924-S2-GI-B001-Q04",
+      "topic": "Coding and decoding / alphabet-position sum",
+      "question": "IFF and ARB each encode to 21. Using the same rule, what number encodes CAW?",
+      "options": [
+        {
+          "label": "A",
+          "text": "23"
+        },
+        {
+          "label": "B",
+          "text": "26"
+        },
+        {
+          "label": "C",
+          "text": "27"
+        },
+        {
+          "label": "D",
+          "text": "25"
+        }
+      ],
+      "correct_option": "C",
+      "correct_answer": "27",
+      "explanation": "The code adds alphabet positions: C = 3, A = 1, W = 23. Total = 3 + 1 + 23 = 27. IFF and ARB also total 21 under this rule.",
+      "source_urls": [
+        "https://www.nextgenpsc.com/ssc/cgl/previous-year-papers/cgl-2024-09-24-s2",
+        "https://www.handwrittennotes.store/previous-year-papers/ssc-cgl-q100-4sec/2024-09-24-1230",
+        "https://cdn-images.prepp.in/public/image/SSC_CGL_2024_September_24_Tier_1_English_Question_Paper_and_Answer_Key_Shift_2__e1e6d06b34732a4456b9a82a81cdd74e.pdf"
+      ]
+    },
+    {
+      "id": "CGL24-T1-240924-S2-GI-B001-Q05",
+      "topic": "Number analogy / constant difference",
+      "question": "The pairs (317, 202) and (438, 323) follow the same relationship. Which option follows it too?",
+      "options": [
+        {
+          "label": "A",
+          "text": "(402, 287)"
+        },
+        {
+          "label": "B",
+          "text": "(415, 295)"
+        },
+        {
+          "label": "C",
+          "text": "(424, 315)"
+        },
+        {
+          "label": "D",
+          "text": "(391, 270)"
+        }
+      ],
+      "correct_option": "A",
+      "correct_answer": "(402, 287)",
+      "explanation": "Both given pairs have a difference of 115: 317 − 202 = 115 and 438 − 323 = 115. Option A also has 402 − 287 = 115.",
+      "source_urls": [
+        "https://www.nextgenpsc.com/ssc/cgl/previous-year-papers/cgl-2024-09-24-s2",
+        "https://www.edurev.in/p/376600/ssc-cgl-tier-1-24th-september-shift-2-pyq-paper-2024",
+        "https://www.handwrittennotes.store/previous-year-papers/ssc-cgl-q100-4sec/2024-09-24-1230"
+      ]
+    },
+    {
+      "id": "CGL24-T1-240924-S2-GI-B001-Q06",
+      "topic": "Coding and decoding / consonant shift",
+      "question": "TERRAIN is coded as VETTAIP and TRAFFIC as VTAHHIE. What is the code for MOTOR?",
+      "options": [
+        {
+          "label": "A",
+          "text": "OVOTO"
+        },
+        {
+          "label": "B",
+          "text": "VOOOT"
+        },
+        {
+          "label": "C",
+          "text": "OOTVO"
+        },
+        {
+          "label": "D",
+          "text": "OOVOT"
+        }
+      ],
+      "correct_option": "D",
+      "correct_answer": "OOVOT",
+      "explanation": "The rule moves consonants two alphabet places forward while leaving vowels unchanged. MOTOR becomes M→O, O→O, T→V, O→O, R→T, yielding OOVOT.",
+      "source_urls": [
+        "https://www.nextgenpsc.com/ssc/cgl/previous-year-papers/cgl-2024-09-24-s2",
+        "https://www.unlockias.in/ssc-cgl-question-paper/ssc-cgl-2024-tier-1-24-september-shift-2/q14-certain-code-language-terrain-written-vettaip-traffic",
+        "https://www.handwrittennotes.store/previous-year-papers/ssc-cgl-q100-4sec/2024-09-24-1230"
+      ]
+    },
+    {
+      "id": "CGL24-T1-240924-S2-GI-B001-Q07",
+      "topic": "Mathematical operations / operator substitution",
+      "question": "If + and − are swapped and × and ÷ are swapped, what value replaces ? in 14 − 45 × 5 + 6 ÷ 3 = ?",
+      "options": [
+        {
+          "label": "A",
+          "text": "5"
+        },
+        {
+          "label": "B",
+          "text": "3"
+        },
+        {
+          "label": "C",
+          "text": "4"
+        },
+        {
+          "label": "D",
+          "text": "6"
+        }
+      ],
+      "correct_option": "A",
+      "correct_answer": "5",
+      "explanation": "After the swaps: 14 + 45 ÷ 5 − 6 × 3. Apply division and multiplication first: 14 + 9 − 18 = 5.",
+      "source_urls": [
+        "https://wikistudy.in/exams/ssc-cgl/pyq-paper-2024-pdf/24-sep-12-30-pm",
+        "https://www.unlockias.in/ssc-cgl-question-paper/ssc-cgl-2024-tier-1-24-september-shift-2/q6-number-will-come-place-question-mark-following",
+        "https://questions.examside.com/past-years/ssc/question/pwhich-number-will-come-in-the-place-of-the-question-mark-ssc-cgl-tier-i-general-intelligence-and-reasoning-ixqke37hz5ftsafs"
+      ]
+    }
+  ],
+  "source_gap_note": "The SSC CGL 2024 Tier-I final answer key/response sheets were released through candidate login. Public archives reproduce candidate response-sheet questions and keyed answers; archive numbering/order may differ, so internal IDs are used instead of official question numbers. No generated model questions are included in this batch.",
+  "official_answer_key_notice_url": "https://ssc.gov.in/api/attachment/uploads/masterData/NoticeBoards/Writeup_Final_Anwerkey_CGLE_2024_T1_191224.pdf",
+  "rights_note": "The public archive pages do not clearly grant redistribution/licensing rights for in-app republication. Keep source attribution and confirm SSC/source terms or permission before releasing the question text commercially or publicly."
+}

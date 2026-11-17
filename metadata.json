@@ -1,0 +1,8 @@
+{
+  "name": "ExamVerse — SSC CGL AI Academy",
+  "description": "Gamified multilingual SSC CGL preparation academy featuring interactive exam games, PYQ bank, full mock tests, video lessons, smart study planner, and ExamVerse AI Tutor in English, Malayalam, Hindi, and Tamil.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

@@ -1,0 +1,364 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Private student profile, role, and gamified progress state",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "username": { "type": "string", "minLength": 3, "maxLength": 32, "pattern": "^[a-zA-Z0-9_.-]+$" },
+        "usernameLower": { "type": "string", "minLength": 3, "maxLength": 32 },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "fullName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "email": { "type": "string", "maxLength": 160 },
+        "profileImage": { "type": "string", "maxLength": 500 },
+        "preferredLanguage": { "type": "string", "enum": ["en", "ml", "hi", "ta"] },
+        "targetPost": { "type": "string", "maxLength": 100 },
+        "dailyGoalMinutes": { "type": "integer" },
+        "xp": { "type": "integer" },
+        "totalPoints": { "type": "integer" },
+        "coins": { "type": "integer" },
+        "streak": { "type": "integer" },
+        "dailyStreak": { "type": "integer" },
+        "totalStudyHours": { "type": "number" },
+        "mockTestsCompleted": { "type": "integer" },
+        "questionsAttempted": { "type": "integer" },
+        "questionsCorrect": { "type": "integer" },
+        "subjectStats": { "type": "object" },
+        "level": { "type": "string", "maxLength": 40 },
+        "role": { "type": "string", "enum": ["student", "admin"] },
+        "isActive": { "type": "boolean" },
+        "completedLessons": { "type": "array" },
+        "earnedBadges": { "type": "array" },
+        "createdAt": { "type": "string", "maxLength": 64 },
+        "lastLogin": { "type": "string", "maxLength": 64 },
+        "updatedAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["uid", "displayName", "preferredLanguage", "xp", "coins", "streak", "role"]
+    },
+    "UsernameReservation": {
+      "title": "UsernameReservation",
+      "description": "Unique username reservation record containing no email PII",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "username": { "type": "string", "minLength": 3, "maxLength": 32 },
+        "createdAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["uid", "username", "createdAt"]
+    },
+    "UserProgress": {
+      "title": "UserProgress",
+      "description": "Detailed per-user lesson, topic, and subject progress summary",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "completedLessonIds": { "type": "array" },
+        "completedTopics": { "type": "array" },
+        "subjectProgress": { "type": "object" },
+        "totalStudyMinutes": { "type": "integer" },
+        "lastStudiedAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["uid", "completedLessonIds", "completedTopics", "totalStudyMinutes"]
+    },
+    "Subject": {
+      "title": "Subject",
+      "description": "SSC CGL core subject metadata",
+      "type": "object",
+      "properties": {
+        "subjectId": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "title": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "description": { "type": "string", "maxLength": 500 },
+        "icon": { "type": "string", "maxLength": 60 },
+        "order": { "type": "integer" },
+        "isPublished": { "type": "boolean" }
+      },
+      "required": ["subjectId", "title", "order", "isPublished"]
+    },
+    "Course": {
+      "title": "Course",
+      "description": "Structured SSC CGL course module linked to a subject",
+      "type": "object",
+      "properties": {
+        "courseId": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "subjectId": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "title": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "description": { "type": "string", "maxLength": 800 },
+        "thumbnailUrl": { "type": "string", "maxLength": 500 },
+        "order": { "type": "integer" },
+        "isPublished": { "type": "boolean" },
+        "createdAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["courseId", "subjectId", "title", "isPublished"]
+    },
+    "Lesson": {
+      "title": "Lesson",
+      "description": "Video lesson metadata (actual media hosted in Firebase Storage)",
+      "type": "object",
+      "properties": {
+        "lessonId": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "courseId": { "type": "string", "maxLength": 100 },
+        "subjectId": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "title": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "description": { "type": "string", "maxLength": 1000 },
+        "thumbnailUrl": { "type": "string", "maxLength": 500 },
+        "videoUrl": { "type": "string", "maxLength": 500 },
+        "duration": { "type": "integer" },
+        "lessonOrder": { "type": "integer" },
+        "isPublished": { "type": "boolean" },
+        "createdAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["lessonId", "subjectId", "title", "isPublished"]
+    },
+    "QuestionItem": {
+      "title": "QuestionItem",
+      "description": "SSC CGL PYQ or AI-generated practice question with strict verification provenance",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "subject": { "type": "string", "maxLength": 60 },
+        "topic": { "type": "string", "maxLength": 80 },
+        "year": { "type": "integer" },
+        "shift": { "type": "string", "maxLength": 80 },
+        "tier": { "type": "string", "maxLength": 20 },
+        "difficulty": { "type": "string", "maxLength": 20 },
+        "sourceType": { "type": "string", "enum": ["PYQ", "AI_GENERATED"] },
+        "sourceLabel": { "type": "string", "maxLength": 160 },
+        "isVerified": { "type": "boolean" },
+        "isPublished": { "type": "boolean" },
+        "language": { "type": "string", "maxLength": 16 },
+        "questionEn": { "type": "string", "maxLength": 1200 },
+        "optionsEn": { "type": "array" },
+        "correctIndex": { "type": "integer" },
+        "explanations": { "type": "object" },
+        "sourceUrls": { "type": "array" }
+      },
+      "required": ["subject", "topic", "tier", "sourceType", "questionEn", "correctIndex", "isPublished"]
+    },
+    "MockTest": {
+      "title": "MockTest",
+      "description": "Timed SSC CGL mock test configuration",
+      "type": "object",
+      "properties": {
+        "testId": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "title": { "type": "string", "minLength": 1, "maxLength": 180 },
+        "category": { "type": "string", "maxLength": 40 },
+        "subjectIds": { "type": "array" },
+        "questionIds": { "type": "array" },
+        "durationMinutes": { "type": "integer" },
+        "totalQuestions": { "type": "integer" },
+        "totalMarks": { "type": "number" },
+        "marksPerCorrect": { "type": "number" },
+        "negativeMarking": { "type": "number" },
+        "description": { "type": "string", "maxLength": 600 },
+        "isPublished": { "type": "boolean" }
+      },
+      "required": ["testId", "title", "questionIds", "durationMinutes", "totalMarks", "isPublished"]
+    },
+    "TestAttempt": {
+      "title": "TestAttempt",
+      "description": "Completed mock test or quiz attempt record",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "testId": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "testTitle": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "answers": { "type": "object" },
+        "subjectBreakdown": { "type": "object" },
+        "score": { "type": "number" },
+        "maxScore": { "type": "number" },
+        "correctCount": { "type": "integer" },
+        "wrongCount": { "type": "integer" },
+        "unattemptedCount": { "type": "integer" },
+        "accuracy": { "type": "number" },
+        "timeTakenSec": { "type": "integer" },
+        "startedAt": { "type": "string", "maxLength": 64 },
+        "submittedAt": { "type": "string", "maxLength": 64 },
+        "createdAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["userId", "testId", "testTitle", "score", "maxScore", "accuracy"]
+    },
+    "GameScore": {
+      "title": "GameScore",
+      "description": "Completed educational exam game score and accuracy record",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "gameId": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "gameTitle": { "type": "string", "maxLength": 120 },
+        "score": { "type": "integer" },
+        "xpEarned": { "type": "integer" },
+        "coinsEarned": { "type": "integer" },
+        "accuracy": { "type": "number" },
+        "completedAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["userId", "gameId", "score", "accuracy", "completedAt"]
+    },
+    "GameSession": {
+      "title": "GameSession",
+      "description": "Completed educational game mode session",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "gameMode": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "score": { "type": "integer" },
+        "xpEarned": { "type": "integer" },
+        "coinsEarned": { "type": "integer" },
+        "accuracy": { "type": "number" },
+        "createdAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["userId", "gameMode", "score", "xpEarned", "coinsEarned"]
+    },
+    "AiTutorMessage": {
+      "title": "AiTutorMessage",
+      "description": "Stored AI Tutor chat message under aiTutorChats/{uid}/messages",
+      "type": "object",
+      "properties": {
+        "messageId": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "role": { "type": "string", "enum": ["user", "assistant"] },
+        "message": { "type": "string", "minLength": 1, "maxLength": 8000 },
+        "timestamp": { "type": "string", "maxLength": 64 },
+        "language": { "type": "string", "enum": ["en", "ml", "hi", "ta"] }
+      },
+      "required": ["messageId", "role", "message", "timestamp", "language"]
+    },
+    "LeaderboardEntry": {
+      "title": "LeaderboardEntry",
+      "description": "Public gamified ranking entry without PII",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "xp": { "type": "integer" },
+        "streak": { "type": "integer" },
+        "level": { "type": "string", "maxLength": 40 },
+        "accuracy": { "type": "number" },
+        "updatedAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["uid", "displayName", "xp", "streak", "level"]
+    },
+    "Bookmark": {
+      "title": "Bookmark",
+      "description": "Saved question or video lesson bookmark",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "itemType": { "type": "string", "enum": ["question", "video"] },
+        "itemId": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "title": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "createdAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["userId", "itemType", "itemId", "title"]
+    },
+    "StudyPlan": {
+      "title": "StudyPlan",
+      "description": "Personalized SSC CGL study plan",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "hoursPerDay": { "type": "number" },
+        "examTarget": { "type": "string", "maxLength": 80 },
+        "examDate": { "type": "string", "maxLength": 40 },
+        "preferredLanguage": { "type": "string", "enum": ["en", "ml", "hi", "ta"] },
+        "blocks": { "type": "array" },
+        "updatedAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["userId", "hoursPerDay", "examTarget", "preferredLanguage"]
+    },
+    "VideoLesson": {
+      "title": "VideoLesson",
+      "description": "Admin-managed video lesson metadata",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "title": { "type": "string", "maxLength": 160 },
+        "subject": { "type": "string", "maxLength": 60 },
+        "topic": { "type": "string", "maxLength": 80 },
+        "videoUrl": { "type": "string", "maxLength": 500 },
+        "isPublished": { "type": "boolean" }
+      },
+      "required": ["title", "subject", "topic"]
+    },
+    "Announcement": {
+      "title": "Announcement",
+      "description": "Academy announcement published by admin",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "minLength": 1, "maxLength": 140 },
+        "body": { "type": "string", "minLength": 1, "maxLength": 1000 },
+        "createdAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["title", "body"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Private student profile & progress data"
+    },
+    "/usernames/{usernameId}": {
+      "schema": { "$ref": "#/entities/UsernameReservation" },
+      "description": "Unique username reservation index (contains no PII)"
+    },
+    "/userProgress/{userId}": {
+      "schema": { "$ref": "#/entities/UserProgress" },
+      "description": "Detailed per-user lesson & subject progress"
+    },
+    "/subjects/{subjectId}": {
+      "schema": { "$ref": "#/entities/Subject" },
+      "description": "Published SSC CGL subjects managed by admins"
+    },
+    "/courses/{courseId}": {
+      "schema": { "$ref": "#/entities/Course" },
+      "description": "Published SSC CGL courses managed by admins"
+    },
+    "/lessons/{lessonId}": {
+      "schema": { "$ref": "#/entities/Lesson" },
+      "description": "Published video lessons (media stored in Firebase Storage)"
+    },
+    "/videoLessons/{lessonId}": {
+      "schema": { "$ref": "#/entities/VideoLesson" },
+      "description": "Curated SSC CGL video lessons managed by admins"
+    },
+    "/questions/{questionId}": {
+      "schema": { "$ref": "#/entities/QuestionItem" },
+      "description": "Curated SSC CGL PYQs & practice questions managed by admins"
+    },
+    "/mockTests/{testId}": {
+      "schema": { "$ref": "#/entities/MockTest" },
+      "description": "Published timed SSC CGL mock tests managed by admins"
+    },
+    "/testAttempts/{attemptId}": {
+      "schema": { "$ref": "#/entities/TestAttempt" },
+      "description": "Student mock test attempt records"
+    },
+    "/gameScores/{scoreId}": {
+      "schema": { "$ref": "#/entities/GameScore" },
+      "description": "Student exam game scores and accuracy records"
+    },
+    "/gameSessions/{sessionId}": {
+      "schema": { "$ref": "#/entities/GameSession" },
+      "description": "Student educational game sessions"
+    },
+    "/aiTutorChats/{userId}/messages/{messageId}": {
+      "schema": { "$ref": "#/entities/AiTutorMessage" },
+      "description": "Private AI Tutor conversation messages for each student"
+    },
+    "/leaderboards/{userId}": {
+      "schema": { "$ref": "#/entities/LeaderboardEntry" },
+      "description": "Public leaderboard summary without PII"
+    },
+    "/bookmarks/{bookmarkId}": {
+      "schema": { "$ref": "#/entities/Bookmark" },
+      "description": "Student saved question and lesson bookmarks"
+    },
+    "/studyPlans/{planId}": {
+      "schema": { "$ref": "#/entities/StudyPlan" },
+      "description": "Student personalized study plans"
+    },
+    "/announcements/{announcementId}": {
+      "schema": { "$ref": "#/entities/Announcement" },
+      "description": "Official academy notices managed by admins"
+    }
+  }
+}

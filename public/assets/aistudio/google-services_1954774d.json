@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "219177770643",
+    "project_id": "examverse-8f939",
+    "storage_bucket": "examverse-8f939.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:219177770643:android:1ef5f230b91d187a843766",
+        "android_client_info": {
+          "package_name": "vm.examverse"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAtRBBnnDc3d1eg_yAh3n8SpeOBQ2sftEs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
