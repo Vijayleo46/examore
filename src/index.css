@@ -6,10 +6,26 @@
     --font-display: 'Plus Jakarta Sans', 'Noto Sans Malayalam', 'Noto Sans Devanagari', 'Noto Sans Tamil', system-ui, sans-serif;
     --font-body: 'DM Sans', 'Noto Sans Malayalam', 'Noto Sans Devanagari', 'Noto Sans Tamil', system-ui, sans-serif;
     --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+
+    --ocean-deep: #062B3D;
+    --ocean-navy: #073B50;
+    --ocean-blue: #075985;
+    --ocean-turquoise: #20C7C9;
+    --ocean-aqua: #55D6D0;
+    --ocean-seaglass: #8DE1D3;
+    --ocean-foam: #F3FAFA;
+    --ocean-coral: #FF8B78;
   }
 
   body {
     font-family: var(--font-body);
+    background-color: var(--ocean-foam);
+    color: var(--ocean-deep);
+  }
+
+  .dark body {
+    background-color: var(--ocean-deep);
+    color: var(--ocean-foam);
   }
 
   h1, h2, h3, h4, .font-display {
@@ -20,6 +36,64 @@
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
   }
+}
+
+@keyframes oceanWaveFloat {
+  0%, 100% {
+    transform: translateX(0px) translateY(0px);
+  }
+  50% {
+    transform: translateX(-14px) translateY(4px);
+  }
+}
+
+@keyframes oceanPulseGlow {
+  0%, 100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 0.78;
+  }
+}
+
+.animate-ocean-wave {
+  animation: oceanWaveFloat 11s ease-in-out infinite;
+}
+
+.animate-ocean-wave-slow {
+  animation: oceanWaveFloat 16s ease-in-out infinite reverse;
+}
+
+.animate-ocean-glow {
+  animation: oceanPulseGlow 7s ease-in-out infinite;
+}
+
+.ocean-gradient-hero {
+  background: linear-gradient(135deg, #062B3D 0%, #073B50 52%, #075985 100%);
+}
+
+.ocean-gradient-accent {
+  background: linear-gradient(135deg, #20C7C9 0%, #55D6D0 100%);
+}
+
+.ocean-glass {
+  background: rgba(243, 250, 250, 0.82);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.dark .ocean-glass {
+  background: rgba(7, 59, 80, 0.72);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.ocean-shadow {
+  box-shadow: 0 10px 30px -12px rgba(6, 43, 61, 0.14), 0 4px 12px -4px rgba(32, 199, 201, 0.08);
+}
+
+.dark .ocean-shadow {
+  box-shadow: 0 12px 32px -12px rgba(2, 14, 22, 0.65), 0 4px 14px -4px rgba(32, 199, 201, 0.12);
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -1,418 +1,581 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   ArrowRight,
   Bell,
   BookOpen,
   Bot,
   Calendar,
+  Compass,
   Flame,
-  Gamepad2,
   Play,
+  Sparkles,
+  Target,
   Trophy,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { LANGUAGES, SUBJECT_NAMES, UI_TEXT } from '../data/i18n';
-import { MOCK_TESTS, SSC_SYLLABUS } from '../data/sscCurriculum';
-import { SubjectId } from '../types/examverse';
+import { SSC_SYLLABUS } from '../data/sscCurriculum';
+import { formatTime12h } from '../lib/localNotifications';
+import { LearnSubView, PracticeSubView, SubjectId, VideoLesson } from '../types/examverse';
+import { VideoPlayerModal } from './VideoPlayerModal';
+import {
+  FirstTimeTip,
+  OceanGlassCard,
+  OceanProgressRing,
+  OceanWaveBackdrop,
+  formatLessonDuration,
+} from './OceanTheme';
 
 const HERO_IMG = '/src/assets/images/hero_examverse_academy_1794828673071.jpg';
 const AVATAR_IMG = '/src/assets/images/avatar_scholar_emblem_1794828673745.jpg';
 
 interface HomeDashboardProps {
-  onOpenLearnSection: (sub: 'videos' | 'syllabus' | 'pyqs' | 'practice' | 'mock-tests') => void;
+  onOpenLearnSection: (sub: LearnSubView) => void;
+  onOpenPracticeSection: (sub: PracticeSubView) => void;
   onStartDailyQuiz: () => void;
   onOpenPlanner: () => void;
-  onOpenAnalytics: () => void;
 }
 
 export const HomeDashboard: React.FC<HomeDashboardProps> = ({
   onOpenLearnSection,
+  onOpenPracticeSection,
   onStartDailyQuiz,
   onOpenPlanner,
-  onOpenAnalytics,
 }) => {
   const {
     language,
     profile,
     levelInfo,
     videos,
+    mockTests,
     testAttempts,
     leaderboard,
     studyPlan,
     announcements,
+    notificationPrefs,
     setActiveTab,
+    openAiTutor,
   } = useApp();
 
   const t = UI_TEXT[language];
   const langMeta = LANGUAGES.find((l) => l.code === language) || LANGUAGES[0];
+  const [resumeVideo, setResumeVideo] = React.useState<VideoLesson | null>(null);
 
-  const resumeVideo = videos.find((v) => !profile.completedLessons.includes(v.id)) || videos[0];
+  // Recently studied / resume lesson
+  const lastStartedLesson = useMemo(() => {
+    if (profile.lastLessonId) {
+      const found = videos.find((v) => v.id === profile.lastLessonId);
+      if (found) return found;
+    }
+    const inProgress = videos.find((v) => {
+      const prog = profile.videoProgress[v.id];
+      return prog && prog.lastSec > 0 && !prog.completed;
+    });
+    return inProgress || videos.find((v) => !profile.completedLessons.includes(v.id)) || videos[0];
+  }, [videos, profile.lastLessonId, profile.videoProgress, profile.completedLessons]);
+
+  const recentLessons = useMemo(() => {
+    const studiedIds = Object.keys(profile.videoProgress || {});
+    const list = videos.filter((v) => studiedIds.includes(v.id) || profile.completedLessons.includes(v.id));
+    if (list.length > 0) return list.slice(0, 3);
+    return videos.slice(0, 3);
+  }, [videos, profile.videoProgress, profile.completedLessons]);
+
+  const upcomingMock = useMemo(() => {
+    const takenIds = new Set(testAttempts.map((a) => a.testId));
+    return mockTests.find((m) => m.isPublished !== false && !takenIds.has(m.id)) || mockTests[0];
+  }, [mockTests, testAttempts]);
+
   const goalPct = Math.min(
     100,
     Math.round((profile.studyMinutesToday / Math.max(1, profile.dailyGoalMinutes)) * 100)
   );
-  const tier1Topics = SSC_SYLLABUS.filter((s) => s.tier === 'Tier 1' || s.tier === 'Both');
-  const tier1Done = tier1Topics.filter((s) => profile.completedSyllabusTopics.includes(s.id)).length;
-  const tier1Pct = Math.round((tier1Done / Math.max(1, tier1Topics.length)) * 100);
 
-  const tier2Topics = SSC_SYLLABUS.filter((s) => s.tier === 'Tier 2' || s.tier === 'Both');
-  const tier2Done = tier2Topics.filter((s) => profile.completedSyllabusTopics.includes(s.id)).length;
-  const tier2Pct = Math.round((tier2Done / Math.max(1, tier2Topics.length)) * 100);
+  // Recommended topics based on lowest accuracy subjects
+  const recommendedTopics = useMemo(() => {
+    const subjects: SubjectId[] = ['quant', 'reasoning', 'english', 'ga', 'computer'];
+    const sorted = [...subjects].sort((a, b) => {
+      const sa = profile.subjectStats[a];
+      const sb = profile.subjectStats[b];
+      const accA = sa && sa.attempted > 0 ? sa.correct / sa.attempted : 0.5;
+      const accB = sb && sb.attempted > 0 ? sb.correct / sb.attempted : 0.5;
+      return accA - accB;
+    });
+    const weakSub = sorted[0];
+    const pending = SSC_SYLLABUS.filter(
+      (topic) => !profile.completedSyllabusTopics.includes(topic.id)
+    );
+    const weakMatches = pending.filter((tItem) => tItem.subject === weakSub);
+    return (weakMatches.length > 0 ? weakMatches : pending).slice(0, 3);
+  }, [profile.subjectStats, profile.completedSyllabusTopics]);
 
-  const latestMock = testAttempts[0];
-  const subjects: SubjectId[] = ['quant', 'reasoning', 'english', 'ga', 'computer'];
+  const greetingHandle = profile.username ? `@${profile.username}` : profile.displayName;
+  const encouragingMessage =
+    goalPct >= 100
+      ? 'Daily goal reached! Great consistency today.'
+      : goalPct >= 50
+      ? 'Over halfway to your daily goal — keep going!'
+      : 'A calm 15-minute session builds lasting exam confidence.';
 
   return (
-    <div className="space-y-8">
-      {/* Hero Mission Control Banner */}
-      <section className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
-        <div className="lg:col-span-7 bg-[#0A192F] text-white rounded-2xl p-6 sm:p-8 flex flex-col justify-between border border-slate-800">
-          <div>
-            <div className="flex items-center gap-3 mb-5">
+    <div className="space-y-6">
+      <FirstTimeTip
+        storageKey="home_welcome_v1"
+        title="Welcome to Examora — Your Simple SSC CGL Home"
+        body="Tap Continue Learning to watch your next lesson, or tap Quick Practice for bite-sized questions. Everything you need is 1 tap away at the bottom."
+      />
+
+      {/* Ocean Hero Card */}
+      <section className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
+        <div className="lg:col-span-8 relative overflow-hidden ocean-gradient-hero text-[#F3FAFA] rounded-3xl p-6 sm:p-8 flex flex-col justify-between ocean-shadow border border-[#20C7C9]/25">
+          <OceanWaveBackdrop />
+          <div className="relative z-10 flex flex-wrap items-start justify-between gap-5">
+            <div className="flex items-center gap-3.5">
               <img
                 src={AVATAR_IMG}
                 alt={profile.displayName}
                 referrerPolicy="no-referrer"
-                className="w-12 h-12 rounded-xl object-cover border border-violet-400/50"
+                className="w-13 h-13 rounded-2xl object-cover border-2 border-[#20C7C9]"
               />
               <div>
-                <div className="text-xs text-violet-300 font-medium">
+                <div className="text-xs font-semibold text-[#55D6D0]">
                   {langMeta.greeting} · {levelInfo.current.name}
                 </div>
-                <div className="font-display text-lg font-bold text-white flex flex-wrap items-center gap-2">
-                  <span>{profile.displayName}</span>
-                  {profile.username && (
-                    <span className="text-xs font-mono-num text-violet-300 font-medium">
-                      @{profile.username}
-                    </span>
-                  )}
-                </div>
+                <h1 className="font-display text-2xl sm:text-3xl font-extrabold tracking-tight text-white mt-0.5">
+                  Hi, {greetingHandle}
+                </h1>
+                <p className="text-xs text-[#8DE1D3] mt-0.5">
+                  Goal: {profile.targetPost}
+                </p>
               </div>
             </div>
 
-            <h1 className="font-display text-2xl sm:text-4xl font-extrabold tracking-tight text-balance leading-tight">
-              {profile.targetPost}
-            </h1>
-            <p className="text-slate-300 text-sm sm:text-base mt-2 max-w-xl">
-              {t.welcomeSub}
-            </p>
+            {/* Animated Daily Progress Ring */}
+            <div className="bg-white/10 backdrop-blur-md border border-[#8DE1D3]/25 rounded-2xl px-4 py-3">
+              <OceanProgressRing
+                percent={goalPct}
+                size={68}
+                strokeWidth={6}
+                label={t.dailyGoal}
+                sublabel={`${profile.studyMinutesToday}/${profile.dailyGoalMinutes} mins`}
+                darkSurface
+              />
+            </div>
           </div>
 
-          <div className="mt-8 space-y-4">
-            {/* Level Progress */}
-            <div>
-              <div className="flex items-center justify-between text-xs text-slate-300 mb-1.5">
-                <span>
-                  Level: <strong className="text-white">{levelInfo.current.name}</strong>
-                </span>
-                <span className="font-mono-num">
-                  {profile.xp} XP {levelInfo.next ? `/ ${levelInfo.next.minXp} XP` : '(Max Tier)'}
-                </span>
-              </div>
-              <div className="h-2 rounded-full bg-slate-800 overflow-hidden">
-                <div
-                  className="h-full bg-violet-500 transition-all duration-300"
-                  style={{ width: `${levelInfo.progressPct}%` }}
-                />
-              </div>
-            </div>
-
-            {/* Primary CTA + Secondary Shortcuts */}
-            <div className="flex flex-wrap items-center gap-3 pt-2">
+          <div className="relative z-10 mt-6 space-y-4">
+            <div className="space-y-1">
+              <p className="text-sm text-[#F3FAFA]/90 font-medium">{encouragingMessage}</p>
               <button
                 type="button"
-                onClick={() => onOpenLearnSection('videos')}
-                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-semibold text-sm transition-colors cursor-pointer"
+                onClick={() => setActiveTab('profile')}
+                className="inline-flex items-center gap-1.5 text-xs text-[#8DE1D3] hover:text-white transition-colors cursor-pointer"
               >
-                <Play className="w-4 h-4" />
+                <Bell className="w-3.5 h-3.5 text-[#55D6D0]" />
+                <span>
+                  {notificationPrefs.dailyReminder
+                    ? `Gentle Study Tide reminder at ${formatTime12h(
+                        notificationPrefs.reminderTime
+                      )} · Adjust goal`
+                    : 'Study Tide reminders paused · Enable in Profile'}
+                </span>
+              </button>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  if (lastStartedLesson) {
+                    setResumeVideo(lastStartedLesson);
+                  } else {
+                    onOpenLearnSection('videos');
+                  }
+                }}
+                className="min-h-[48px] inline-flex items-center gap-2 px-5 py-3 rounded-2xl bg-[#20C7C9] hover:bg-[#55D6D0] text-[#062B3D] font-extrabold text-sm transition-colors shadow-lg cursor-pointer"
+              >
+                <Play className="w-4 h-4 fill-current" />
                 {t.continueLearning}
               </button>
               <button
                 type="button"
-                onClick={onStartDailyQuiz}
-                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-700 hover:border-violet-400 text-white text-sm font-medium transition-colors cursor-pointer"
+                onClick={() => onOpenPracticeSection('drills')}
+                className="min-h-[48px] inline-flex items-center gap-2 px-5 py-3 rounded-2xl bg-white/15 hover:bg-white/25 border border-[#8DE1D3]/40 text-white font-bold text-sm transition-colors cursor-pointer"
               >
-                {t.dailyQuiz}
+                <Target className="w-4 h-4 text-[#55D6D0]" />
+                {t.quickPractice}
               </button>
               <button
                 type="button"
-                onClick={() => setActiveTab('play')}
-                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-700 hover:border-violet-400 text-white text-sm font-medium transition-colors cursor-pointer"
+                onClick={onStartDailyQuiz}
+                className="min-h-[48px] inline-flex items-center gap-2 px-4 py-3 rounded-2xl border border-[#FF8B78]/60 bg-[#FF8B78]/15 hover:bg-[#FF8B78]/25 text-[#F3FAFA] font-semibold text-xs sm:text-sm transition-colors cursor-pointer"
               >
-                <Gamepad2 className="w-4 h-4 text-violet-300" />
-                {t.quickPlay}
+                <Flame className="w-4 h-4 text-[#FF8B78]" />
+                {t.dailyQuiz}
               </button>
             </div>
           </div>
         </div>
 
-        {/* Visual Architectural Side Card */}
-        <div className="lg:col-span-5 relative rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 min-h-[240px]">
+        {/* Upcoming Mock Test Card */}
+        <div className="lg:col-span-4 relative rounded-3xl overflow-hidden border border-[#8DE1D3]/45 dark:border-[#20C7C9]/25 min-h-[240px] flex flex-col justify-between bg-[#073B50] text-[#F3FAFA] ocean-shadow">
           <img
             src={HERO_IMG}
-            alt="Examora Academy Hall"
+            alt="Examora Mock Arena"
             referrerPolicy="no-referrer"
-            className="w-full h-full object-cover"
+            className="absolute inset-0 w-full h-full object-cover opacity-35"
           />
-          <div className="absolute inset-0 bg-gradient-to-t from-[#081221]/90 via-[#081221]/40 to-transparent flex flex-col justify-end p-6 text-white">
-            <div className="text-xs text-violet-300 font-medium">
-              {t.resumeVideo}
+          <div className="relative z-10 p-6 flex flex-col justify-between h-full bg-gradient-to-t from-[#062B3D] via-[#062B3D]/75 to-transparent">
+            <div className="flex items-center justify-between">
+              <span className="inline-flex items-center gap-1.5 text-xs font-bold text-[#55D6D0]">
+                <Trophy className="w-4 h-4" />
+                Upcoming Mock Test
+              </span>
+              <span className="font-mono-num text-xs font-semibold text-[#8DE1D3]">
+                {upcomingMock?.durationMinutes ?? 15} mins
+              </span>
             </div>
-            <div className="font-display text-lg font-bold mt-1">
-              {resumeVideo.title}
+
+            <div className="mt-4">
+              <h2 className="font-display text-lg font-extrabold leading-snug text-white">
+                {upcomingMock?.title || 'SSC CGL Tier 1 Full Mock'}
+              </h2>
+              <p className="text-xs text-[#8DE1D3] mt-1.5 line-clamp-2">
+                {upcomingMock?.description || 'Simulated exam with calm step-by-step review.'}
+              </p>
             </div>
-            <div className="text-xs text-slate-300 mt-1">
-              {SUBJECT_NAMES[resumeVideo.subject][language]} · {resumeVideo.playlist} · {resumeVideo.durationSec}s lesson
-            </div>
+
             <button
               type="button"
-              onClick={() => onOpenLearnSection('videos')}
-              className="mt-4 self-start inline-flex items-center gap-1.5 text-xs font-semibold text-violet-300 hover:text-violet-200 cursor-pointer"
+              onClick={() => onOpenLearnSection('mock-tests')}
+              className="mt-5 min-h-[44px] w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-2xl bg-[#20C7C9] hover:bg-[#55D6D0] text-[#062B3D] text-xs font-extrabold transition-colors cursor-pointer"
             >
-              Watch lesson & take quiz <ArrowRight className="w-3.5 h-3.5" />
+              Open Mock Tests <ArrowRight className="w-4 h-4" />
             </button>
           </div>
         </div>
       </section>
 
-      {/* 4-Column KPI Metric Strip */}
-      <section className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white dark:bg-[#0F1E36] border border-slate-200 dark:border-slate-800 rounded-xl p-5">
-          <div className="text-xs text-slate-500 dark:text-slate-400">{t.currentXp}</div>
-          <div className="font-mono-num text-2xl font-bold mt-1">{profile.xp.toLocaleString()} XP</div>
-          <div className="text-xs text-violet-700 dark:text-violet-300 mt-1 font-mono-num">
-            {profile.coins} Coins · {profile.earnedBadges.length} Badges
-          </div>
-        </div>
-
-        <div className="bg-white dark:bg-[#0F1E36] border border-slate-200 dark:border-slate-800 rounded-xl p-5">
-          <div className="text-xs text-slate-500 dark:text-slate-400">{t.streakDays}</div>
-          <div className="font-mono-num text-2xl font-bold mt-1 flex items-center gap-2">
-            <Flame className="w-5 h-5 text-violet-600 dark:text-violet-400" />
-            {profile.streak} Days
-          </div>
-          <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            {profile.dailyChallengeDoneDate === new Date().toISOString().slice(0, 10)
-              ? 'Daily challenge completed'
-              : 'Daily challenge ready'}
-          </div>
-        </div>
-
-        <div className="bg-white dark:bg-[#0F1E36] border border-slate-200 dark:border-slate-800 rounded-xl p-5">
-          <div className="text-xs text-slate-500 dark:text-slate-400">{t.dailyGoal}</div>
-          <div className="font-mono-num text-2xl font-bold mt-1">
-            {profile.studyMinutesToday} / {profile.dailyGoalMinutes}m
-          </div>
-          <div className="h-1.5 rounded-full bg-slate-100 dark:bg-slate-800 mt-2 overflow-hidden">
-            <div className="h-full bg-violet-600 dark:bg-violet-400" style={{ width: `${goalPct}%` }} />
-          </div>
-        </div>
-
-        <div className="bg-white dark:bg-[#0F1E36] border border-slate-200 dark:border-slate-800 rounded-xl p-5">
-          <div className="text-xs text-slate-500 dark:text-slate-400">{t.latestMockScore}</div>
-          <div className="font-mono-num text-2xl font-bold mt-1">
-            {latestMock ? `${latestMock.score}/${latestMock.maxScore}` : 'Not attempted'}
+      {/* Ocean Quest + Future Exam Predictor Quick Launchers */}
+      <section className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="rounded-2xl bg-white/95 dark:bg-[#073B50]/90 border border-[#20C7C9]/40 p-4 sm:p-5 ocean-shadow flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-3.5 min-w-0">
+            <img
+              src="/src/assets/images/ocean_quest_submarine_1794998665527.jpg"
+              alt="Ocean Quest Submarine"
+              referrerPolicy="no-referrer"
+              className="w-12 h-12 rounded-2xl object-cover border-2 border-[#20C7C9] shrink-0"
+            />
+            <div className="min-w-0">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-[#075985] dark:text-[#55D6D0]">
+                Ocean Quest · Interactive SSC CGL Game
+              </div>
+              <div className="font-display font-extrabold text-sm sm:text-base truncate">
+                Explore 9 Underwater Zones &amp; Collect Sea Crystals
+              </div>
+            </div>
           </div>
           <button
             type="button"
-            onClick={() => onOpenLearnSection('mock-tests')}
-            className="text-xs font-medium text-violet-700 dark:text-violet-300 hover:underline mt-1 cursor-pointer"
+            onClick={() => onOpenPracticeSection('games')}
+            className="min-h-[44px] inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-[#075985] hover:bg-[#062B3D] dark:bg-[#20C7C9] dark:hover:bg-[#55D6D0] text-white dark:text-[#062B3D] text-xs font-extrabold cursor-pointer shrink-0"
           >
-            {latestMock ? `${latestMock.accuracy}% accuracy · Retake` : 'Launch Tier 1 Mock Test'}
+            Play Ocean Quest
+            <ArrowRight className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="rounded-2xl bg-white/95 dark:bg-[#073B50]/90 border border-[#20C7C9]/40 p-4 sm:p-5 ocean-shadow flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-3.5 min-w-0">
+            <div className="w-12 h-12 rounded-2xl bg-[#20C7C9]/15 border-2 border-[#20C7C9]/50 text-[#075985] dark:text-[#55D6D0] flex items-center justify-center shrink-0">
+              <Compass className="w-6 h-6" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-[#075985] dark:text-[#55D6D0]">
+                Future Exam Predictor · 2026 / 2027 / 2028
+              </div>
+              <div className="font-display font-extrabold text-sm sm:text-base truncate">
+                2016–2025 Trend Analysis, Topic Confidence &amp; Predicted Mocks
+              </div>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setActiveTab('predictor')}
+            className="min-h-[44px] inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-[#20C7C9] hover:bg-[#55D6D0] text-[#062B3D] text-xs font-extrabold cursor-pointer shrink-0"
+          >
+            Open Predictor
+            <ArrowRight className="w-4 h-4" />
           </button>
         </div>
       </section>
 
-      {/* Tier 1 / Tier 2 Progress & Subject Mastery */}
-      <section className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        <div className="lg:col-span-7 bg-white dark:bg-[#0F1E36] border border-slate-200 dark:border-slate-800 rounded-2xl p-6 space-y-6">
-          <div className="flex items-center justify-between">
-            <h2 className="font-display text-lg font-bold">{t.subjectPerformance}</h2>
+      {/* Clean 3-Stat Overview Strip */}
+      <section className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <OceanGlassCard className="p-5 flex items-center justify-between">
+          <div>
+            <div className="text-xs font-semibold text-[#075985] dark:text-[#8DE1D3]">
+              {t.streakDays}
+            </div>
+            <div className="font-mono-num text-2xl font-extrabold mt-1">
+              {profile.streak} Days
+            </div>
+            <div className="text-[11px] text-[#073B50]/75 dark:text-[#8DE1D3]/80 mt-0.5">
+              {profile.dailyChallengeDoneDate === new Date().toISOString().slice(0, 10)
+                ? 'Today’s challenge completed'
+                : 'Daily challenge ready'}
+            </div>
+          </div>
+          <div className="w-11 h-11 rounded-2xl bg-[#FF8B78]/15 text-[#FF8B78] flex items-center justify-center">
+            <Flame className="w-5 h-5" />
+          </div>
+        </OceanGlassCard>
+
+        <OceanGlassCard className="p-5 flex items-center justify-between">
+          <div>
+            <div className="text-xs font-semibold text-[#075985] dark:text-[#8DE1D3]">
+              {t.currentXp}
+            </div>
+            <div className="font-mono-num text-2xl font-extrabold mt-1">
+              {profile.xp.toLocaleString()} pts
+            </div>
+            <div className="text-[11px] text-[#073B50]/75 dark:text-[#8DE1D3]/80 mt-0.5">
+              {profile.completedLessons.length} lessons · {testAttempts.length} mocks done
+            </div>
+          </div>
+          <div className="w-11 h-11 rounded-2xl bg-[#20C7C9]/15 text-[#075985] dark:text-[#55D6D0] flex items-center justify-center">
+            <Trophy className="w-5 h-5" />
+          </div>
+        </OceanGlassCard>
+
+        <OceanGlassCard className="p-5 flex items-center justify-between">
+          <div>
+            <div className="text-xs font-semibold text-[#075985] dark:text-[#8DE1D3]">
+              Overall Accuracy
+            </div>
+            <div className="font-mono-num text-2xl font-extrabold mt-1">
+              {profile.questionsAttempted > 0
+                ? Math.round((profile.questionsCorrect / profile.questionsAttempted) * 100)
+                : 0}
+              %
+            </div>
             <button
               type="button"
-              onClick={onOpenAnalytics}
-              className="text-xs font-semibold text-violet-700 dark:text-violet-300 hover:underline cursor-pointer"
+              onClick={() => setActiveTab('analytics')}
+              className="text-[11px] font-bold text-[#075985] dark:text-[#55D6D0] hover:underline mt-0.5 cursor-pointer"
             >
-              Full Analytics →
+              View full analytics →
+            </button>
+          </div>
+          <OceanProgressRing
+            percent={
+              profile.questionsAttempted > 0
+                ? Math.round((profile.questionsCorrect / profile.questionsAttempted) * 100)
+                : 0
+            }
+            size={56}
+            strokeWidth={5}
+          />
+        </OceanGlassCard>
+      </section>
+
+      {/* Recently Studied Lessons + Recommended Topics */}
+      <section className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+        <OceanGlassCard className="lg:col-span-7 p-6 space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="font-display text-lg font-extrabold flex items-center gap-2">
+              <BookOpen className="w-5 h-5 text-[#20C7C9]" />
+              Recently Studied Lessons
+            </h2>
+            <button
+              type="button"
+              onClick={() => onOpenLearnSection('videos')}
+              className="min-h-[36px] text-xs font-bold text-[#075985] dark:text-[#55D6D0] hover:underline cursor-pointer"
+            >
+              All Lessons →
             </button>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pb-4 border-b border-slate-100 dark:border-slate-800">
-            <div>
-              <div className="flex justify-between text-xs mb-1.5">
-                <span className="font-medium">{t.tier1Progress}</span>
-                <span className="font-mono-num font-semibold">{tier1Pct}%</span>
-              </div>
-              <div className="h-2 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
-                <div className="h-full bg-[#0A192F] dark:bg-violet-500" style={{ width: `${tier1Pct}%` }} />
-              </div>
-            </div>
-            <div>
-              <div className="flex justify-between text-xs mb-1.5">
-                <span className="font-medium">{t.tier2Progress}</span>
-                <span className="font-mono-num font-semibold">{tier2Pct}%</span>
-              </div>
-              <div className="h-2 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
-                <div className="h-full bg-violet-600" style={{ width: `${tier2Pct}%` }} />
-              </div>
-            </div>
-          </div>
-
-          <div className="space-y-3.5">
-            {subjects.map((sub) => {
-              const st = profile.subjectStats[sub] || { attempted: 0, correct: 0 };
-              const acc = st.attempted > 0 ? Math.round((st.correct / st.attempted) * 100) : 0;
-              return (
-                <div key={sub}>
-                  <div className="flex items-center justify-between text-sm mb-1">
-                    <span className="font-medium">{SUBJECT_NAMES[sub][language]}</span>
-                    <span className="text-xs font-mono-num text-slate-500 dark:text-slate-400">
-                      {st.correct}/{st.attempted} correct · {acc}%
-                    </span>
-                  </div>
-                  <div className="h-2 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
-                    <div
-                      className="h-full bg-[#0A192F] dark:bg-violet-400 transition-all"
-                      style={{ width: `${Math.max(acc, st.attempted > 0 ? 8 : 0)}%` }}
-                    />
-                  </div>
+          {lastStartedLesson && (
+            <div className="p-4 rounded-2xl bg-[#20C7C9]/10 dark:bg-[#062B3D]/70 border border-[#20C7C9]/35 flex flex-wrap items-center justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-[11px] font-bold text-[#075985] dark:text-[#55D6D0]">
+                  {t.resumeVideo}
                 </div>
+                <div className="font-display font-bold text-sm truncate mt-0.5">
+                  {lastStartedLesson.title}
+                </div>
+                <div className="text-xs text-[#073B50]/75 dark:text-[#8DE1D3] mt-0.5">
+                  {SUBJECT_NAMES[lastStartedLesson.subject][language]} ·{' '}
+                  {formatLessonDuration(lastStartedLesson.durationSec)}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setResumeVideo(lastStartedLesson)}
+                className="min-h-[44px] inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#075985] dark:bg-[#20C7C9] text-white dark:text-[#062B3D] text-xs font-bold cursor-pointer shrink-0"
+              >
+                <Play className="w-3.5 h-3.5" />
+                Resume
+              </button>
+            </div>
+          )}
+
+          <div className="divide-y divide-[#8DE1D3]/30 dark:divide-[#20C7C9]/15">
+            {recentLessons.map((vid) => {
+              const done = profile.completedLessons.includes(vid.id);
+              return (
+                <button
+                  key={vid.id}
+                  type="button"
+                  onClick={() => setResumeVideo(vid)}
+                  className="w-full py-3 flex items-center justify-between gap-3 text-left hover:opacity-85 cursor-pointer"
+                >
+                  <div className="min-w-0">
+                    <div className="text-sm font-semibold truncate">{vid.title}</div>
+                    <div className="text-xs text-[#075985] dark:text-[#8DE1D3]">
+                      {SUBJECT_NAMES[vid.subject][language]} · {vid.topic} ·{' '}
+                      {formatLessonDuration(vid.durationSec)}
+                    </div>
+                  </div>
+                  <span
+                    className={`text-[11px] font-bold px-2.5 py-1 rounded-lg shrink-0 ${
+                      done
+                        ? 'bg-[#20C7C9]/20 text-[#075985] dark:text-[#55D6D0]'
+                        : 'bg-[#FF8B78]/15 text-[#9A2D1F] dark:text-[#FF8B78]'
+                    }`}
+                  >
+                    {done ? 'Completed' : 'In Progress'}
+                  </span>
+                </button>
               );
             })}
           </div>
-        </div>
+        </OceanGlassCard>
 
-        {/* Today's Plan + Leaderboard Preview */}
-        <div className="lg:col-span-5 space-y-6">
-          <div className="bg-white dark:bg-[#0F1E36] border border-slate-200 dark:border-slate-800 rounded-2xl p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="font-display text-lg font-bold flex items-center gap-2">
-                <Calendar className="w-4 h-4 text-violet-700 dark:text-violet-400" />
+        {/* Recommended Topics & Today's Plan */}
+        <div className="lg:col-span-5 space-y-5">
+          <OceanGlassCard className="p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="font-display text-lg font-extrabold flex items-center gap-2">
+                <Sparkles className="w-5 h-5 text-[#20C7C9]" />
+                Recommended Topics
+              </h2>
+              <button
+                type="button"
+                onClick={() => onOpenLearnSection('syllabus')}
+                className="text-xs font-bold text-[#075985] dark:text-[#55D6D0] hover:underline cursor-pointer"
+              >
+                Syllabus →
+              </button>
+            </div>
+            <div className="space-y-2.5">
+              {recommendedTopics.map((topic) => (
+                <button
+                  key={topic.id}
+                  type="button"
+                  onClick={() => onOpenPracticeSection('drills')}
+                  className="w-full min-h-[52px] text-left p-3.5 rounded-2xl border border-[#8DE1D3]/45 dark:border-[#20C7C9]/20 hover:border-[#20C7C9] transition-colors cursor-pointer flex items-center justify-between gap-3"
+                >
+                  <div className="min-w-0">
+                    <div className="text-sm font-bold truncate">{topic.title}</div>
+                    <div className="text-xs text-[#075985] dark:text-[#8DE1D3]">
+                      {SUBJECT_NAMES[topic.subject][language]} · {topic.tier}
+                    </div>
+                  </div>
+                  <span className="text-xs font-bold text-[#20C7C9] shrink-0">Practice →</span>
+                </button>
+              ))}
+            </div>
+          </OceanGlassCard>
+
+          <OceanGlassCard className="p-6 space-y-3">
+            <div className="flex items-center justify-between">
+              <h2 className="font-display text-base font-extrabold flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-[#20C7C9]" />
                 {t.todaysPlan}
               </h2>
               <button
                 type="button"
                 onClick={onOpenPlanner}
-                className="text-xs font-semibold text-violet-700 dark:text-violet-300 hover:underline cursor-pointer"
+                className="text-xs font-bold text-[#075985] dark:text-[#55D6D0] hover:underline cursor-pointer"
               >
-                {studyPlan ? 'Edit Plan' : 'Build AI Plan'}
+                {studyPlan ? 'Edit Plan' : 'Build Plan'}
               </button>
             </div>
 
             {studyPlan && studyPlan.blocks.length > 0 ? (
-              <ul className="divide-y divide-slate-100 dark:divide-slate-800">
-                {studyPlan.blocks.slice(0, 3).map((b, i) => (
-                  <li key={i} className="py-2.5 flex items-center justify-between gap-3">
-                    <div>
-                      <div className="text-sm font-medium">{b.topic}</div>
-                      <div className="text-xs text-slate-500 dark:text-slate-400">
+              <ul className="divide-y divide-[#8DE1D3]/30 dark:divide-[#20C7C9]/15">
+                {studyPlan.blocks.slice(0, 2).map((b, i) => (
+                  <li key={i} className="py-2.5 flex items-center justify-between gap-3 text-xs">
+                    <div className="min-w-0">
+                      <div className="font-semibold truncate">{b.topic}</div>
+                      <div className="text-[#075985] dark:text-[#8DE1D3]">
                         {b.timeSlot} · {b.subject}
                       </div>
                     </div>
-                    <span className="text-xs font-mono-num text-slate-500 dark:text-slate-400 shrink-0">
-                      {b.durationMinutes}m
-                    </span>
+                    <span className="font-mono-num font-bold shrink-0">{b.durationMinutes}m</span>
                   </li>
                 ))}
               </ul>
             ) : (
-              <div className="text-sm text-slate-600 dark:text-slate-300 space-y-3">
-                <p>No custom daily plan saved yet. Let Examora build your SSC CGL timetable based on your weak subjects.</p>
-                <button
-                  type="button"
-                  onClick={onOpenPlanner}
-                  className="px-4 py-2 rounded-lg bg-[#0A192F] dark:bg-violet-600 text-white text-xs font-semibold cursor-pointer"
-                >
-                  Open Smart Study Planner
-                </button>
-              </div>
+              <p className="text-xs text-[#073B50]/80 dark:text-[#8DE1D3]">
+                Create a calm daily timetable tailored to your available study hours.
+              </p>
             )}
-          </div>
+          </OceanGlassCard>
+        </div>
+      </section>
 
-          <div className="bg-white dark:bg-[#0F1E36] border border-slate-200 dark:border-slate-800 rounded-2xl p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="font-display text-lg font-bold flex items-center gap-2">
-                <Trophy className="w-4 h-4 text-violet-600 dark:text-violet-400" />
-                {t.leaderboardPreview}
-              </h2>
-              <button
-                type="button"
-                onClick={onOpenAnalytics}
-                className="text-xs font-semibold text-violet-700 dark:text-violet-300 hover:underline cursor-pointer"
-              >
-                View All
-              </button>
+      {/* Quick Help + Top Scholars + Notices */}
+      <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <button
+          type="button"
+          onClick={openAiTutor}
+          className="text-left bg-white/95 dark:bg-[#073B50]/90 border border-[#8DE1D3]/50 dark:border-[#20C7C9]/25 hover:border-[#20C7C9] rounded-2xl p-5 ocean-shadow transition-all cursor-pointer"
+        >
+          <Bot className="w-5 h-5 text-[#20C7C9] mb-2.5" />
+          <div className="font-display font-bold text-base">{t.tutorTitle}</div>
+          <p className="text-xs text-[#073B50]/80 dark:text-[#8DE1D3] mt-1">
+            Ask any Maths, Reasoning, or English doubt in {langMeta.nativeName}.
+          </p>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('pyqs')}
+          className="text-left bg-white/95 dark:bg-[#073B50]/90 border border-[#8DE1D3]/50 dark:border-[#20C7C9]/25 hover:border-[#20C7C9] rounded-2xl p-5 ocean-shadow transition-all cursor-pointer"
+        >
+          <BookOpen className="w-5 h-5 text-[#075985] dark:text-[#55D6D0] mb-2.5" />
+          <div className="font-display font-bold text-base">2016–2025 PYQ Library</div>
+          <p className="text-xs text-[#073B50]/80 dark:text-[#8DE1D3] mt-1">
+            Browse all SSC CGL questions &amp; answers with step-by-step solutions and shortcuts.
+          </p>
+        </button>
+
+        <div className="bg-white/95 dark:bg-[#073B50]/90 border border-[#8DE1D3]/50 dark:border-[#20C7C9]/25 rounded-2xl p-5 ocean-shadow flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-bold text-[#075985] dark:text-[#55D6D0] flex items-center gap-1.5">
+                <Bell className="w-3.5 h-3.5 text-[#FF8B78]" />
+                Academy Notice
+              </span>
+              <span className="text-[11px] font-mono-num text-[#073B50]/70 dark:text-[#8DE1D3]">
+                Rank #{Math.max(1, leaderboard.findIndex((l) => l.isCurrentUser) + 1)}
+              </span>
             </div>
-            <ul className="divide-y divide-slate-100 dark:divide-slate-800">
-              {leaderboard.slice(0, 4).map((entry, idx) => (
-                <li
-                  key={entry.uid}
-                  className={`py-2.5 flex items-center justify-between text-sm ${
-                    entry.isCurrentUser ? 'font-semibold text-violet-700 dark:text-violet-300' : ''
-                  }`}
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <span className="font-mono-num text-xs w-5 text-slate-400">#{idx + 1}</span>
-                    <span className="truncate">{entry.displayName}</span>
-                  </div>
-                  <span className="font-mono-num text-xs shrink-0">
-                    {entry.xp.toLocaleString()} XP · {entry.streak}d
-                  </span>
-                </li>
-              ))}
-            </ul>
+            <div className="font-display font-bold text-sm">
+              {announcements[0]?.title || 'SSC CGL Study Notice'}
+            </div>
+            <p className="text-xs text-[#073B50]/80 dark:text-[#8DE1D3] mt-1 line-clamp-2">
+              {announcements[0]?.body || 'Stay consistent with daily quizzes and mock tests.'}
+            </p>
           </div>
         </div>
       </section>
 
-      {/* Quick Action Directory & Official Notices */}
-      <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <button
-          type="button"
-          onClick={() => onOpenLearnSection('pyqs')}
-          className="text-left bg-white dark:bg-[#0F1E36] border border-slate-200 dark:border-slate-800 hover:border-violet-600 dark:hover:border-violet-400 rounded-xl p-5 transition-colors cursor-pointer"
-        >
-          <BookOpen className="w-5 h-5 text-violet-700 dark:text-violet-400 mb-3" />
-          <div className="font-display font-bold text-base">2016–2025 PYQ Bank</div>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            Original English papers with separate {langMeta.nativeName} explanations.
-          </p>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => onOpenLearnSection('mock-tests')}
-          className="text-left bg-white dark:bg-[#0F1E36] border border-slate-200 dark:border-slate-800 hover:border-violet-600 dark:hover:border-violet-400 rounded-xl p-5 transition-colors cursor-pointer"
-        >
-          <Trophy className="w-5 h-5 text-violet-700 dark:text-violet-400 mb-3" />
-          <div className="font-display font-bold text-base">{MOCK_TESTS.length} Official Mock Tests</div>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            Timed CBT exam interface with question palette and negative marking.
-          </p>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setActiveTab('tutor')}
-          className="text-left bg-white dark:bg-[#0F1E36] border border-slate-200 dark:border-slate-800 hover:border-violet-600 dark:hover:border-violet-400 rounded-xl p-5 transition-colors cursor-pointer"
-        >
-          <Bot className="w-5 h-5 text-violet-700 dark:text-violet-400 mb-3" />
-          <div className="font-display font-bold text-base">{t.tutorTitle}</div>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            Step-by-step Maths, Reasoning & Grammar doubts in {langMeta.nativeName}.
-          </p>
-        </button>
-      </section>
-
-      {announcements.length > 0 && (
-        <section className="bg-white dark:bg-[#0F1E36] border border-slate-200 dark:border-slate-800 rounded-xl p-5">
-          <div className="flex items-center gap-2 text-xs font-semibold text-slate-500 dark:text-slate-400 mb-2">
-            <Bell className="w-4 h-4 text-violet-600 dark:text-violet-400" />
-            Academy Notices
-          </div>
-          <div className="font-display font-semibold text-sm">{announcements[0].title}</div>
-          <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">{announcements[0].body}</p>
-        </section>
+      {resumeVideo && (
+        <VideoPlayerModal lesson={resumeVideo} onClose={() => setResumeVideo(null)} />
       )}
     </div>
   );

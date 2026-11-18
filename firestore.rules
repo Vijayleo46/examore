@@ -88,13 +88,20 @@ service cloud.firestore {
 
     function isValidUserProgress(data) {
       return data.keys().hasAll(['uid', 'completedLessonIds', 'completedTopics', 'totalStudyMinutes'])
-        && data.keys().hasOnly(['uid', 'completedLessonIds', 'completedTopics', 'subjectProgress', 'totalStudyMinutes', 'lastStudiedAt'])
+        && data.keys().hasOnly([
+          'uid', 'completedLessonIds', 'completedTopics', 'subjectProgress',
+          'totalStudyMinutes', 'lastStudiedAt', 'difficultQuestionIds',
+          'revisionListIds', 'pyqAttempts'
+        ])
         && data.uid is string && data.uid == request.auth.uid && data.uid.size() <= 128
         && data.completedLessonIds is list && data.completedLessonIds.size() <= 500
         && data.completedTopics is list && data.completedTopics.size() <= 500
         && (!('subjectProgress' in data) || data.subjectProgress is map)
         && data.totalStudyMinutes is int && data.totalStudyMinutes >= 0 && data.totalStudyMinutes <= 2000000
-        && (!('lastStudiedAt' in data) || (data.lastStudiedAt is string && data.lastStudiedAt.size() <= 64));
+        && (!('lastStudiedAt' in data) || (data.lastStudiedAt is string && data.lastStudiedAt.size() <= 64))
+        && (!('difficultQuestionIds' in data) || (data.difficultQuestionIds is list && data.difficultQuestionIds.size() <= 1000))
+        && (!('revisionListIds' in data) || (data.revisionListIds is list && data.revisionListIds.size() <= 1000))
+        && (!('pyqAttempts' in data) || data.pyqAttempts is map);
     }
 
     function isValidSubject(data) {
@@ -151,28 +158,36 @@ service cloud.firestore {
     function isValidQuestion(data) {
       return data.keys().hasAll(['subject', 'topic', 'tier', 'sourceType', 'questionEn', 'correctIndex'])
         && data.keys().hasOnly([
-          'id', 'subject', 'topic', 'year', 'shift', 'tier', 'difficulty',
-          'sourceType', 'sourceLabel', 'isVerified', 'isPublished', 'language',
-          'questionEn', 'optionsEn', 'correctIndex', 'explanations', 'sourceUrls'
+          'id', 'questionNumber', 'subject', 'topic', 'year', 'examDate', 'shift', 'tier', 'difficulty',
+          'sourceType', 'sourceLabel', 'answerStatus', 'isVerified', 'isPublished', 'language',
+          'questionEn', 'questionHi', 'optionsEn', 'correctIndex', 'explanations',
+          'stepByStep', 'shortcutMethod', 'sourceUrls'
         ])
         && (!('id' in data) || (data.id is string && data.id.size() <= 100))
+        && (!('questionNumber' in data) || (data.questionNumber is int && data.questionNumber >= 1 && data.questionNumber <= 5000))
         && data.subject is string && data.subject.size() >= 1 && data.subject.size() <= 60
         && data.topic is string && data.topic.size() >= 1 && data.topic.size() <= 80
         && (!('year' in data) || (data.year is int && data.year >= 2000 && data.year <= 2100))
+        && (!('examDate' in data) || (data.examDate is string && data.examDate.size() <= 40))
         && (!('shift' in data) || (data.shift is string && data.shift.size() <= 80))
         && data.tier is string && data.tier.size() <= 20
         && (!('difficulty' in data) || (data.difficulty is string && data.difficulty.size() <= 20))
         && data.sourceType in ['PYQ', 'AI_GENERATED']
         && (!('sourceLabel' in data) || (data.sourceLabel is string && data.sourceLabel.size() <= 160))
+        && (!('answerStatus' in data) || data.answerStatus in ['official', 'unofficial', 'needs_verification'])
         && (!('isVerified' in data) || data.isVerified is bool)
-        // Never allow AI-generated questions to be flagged as verified PYQs
+        // Never allow AI-generated questions to be flagged as verified official PYQs
         && !(data.sourceType == 'AI_GENERATED' && ('isVerified' in data) && data.isVerified == true)
+        && !(data.sourceType == 'AI_GENERATED' && ('answerStatus' in data) && data.answerStatus == 'official')
         && (!('isPublished' in data) || data.isPublished is bool)
         && (!('language' in data) || (data.language is string && data.language.size() <= 16))
         && data.questionEn is string && data.questionEn.size() >= 1 && data.questionEn.size() <= 1200
+        && (!('questionHi' in data) || (data.questionHi is string && data.questionHi.size() <= 1200))
         && (!('optionsEn' in data) || (data.optionsEn is list && data.optionsEn.size() == 4))
         && data.correctIndex is int && data.correctIndex >= 0 && data.correctIndex <= 3
         && (!('explanations' in data) || data.explanations is map)
+        && (!('stepByStep' in data) || (data.stepByStep is list && data.stepByStep.size() <= 20))
+        && (!('shortcutMethod' in data) || (data.shortcutMethod is string && data.shortcutMethod.size() <= 800))
         && (!('sourceUrls' in data) || (data.sourceUrls is list && data.sourceUrls.size() <= 10));
     }
 
@@ -289,6 +304,78 @@ service cloud.firestore {
         && data.title is string && data.title.size() >= 1 && data.title.size() <= 140
         && data.body is string && data.body.size() >= 1 && data.body.size() <= 1000
         && (!('createdAt' in data) || (data.createdAt is string && data.createdAt.size() <= 64));
+    }
+
+    function isValidOceanQuestMission(data) {
+      return data.keys().hasAll(['missionId', 'locationId', 'title', 'mode', 'difficulty', 'subject', 'questionCount', 'minAccuracyPct', 'xpReward', 'coinReward', 'isPublished'])
+        && data.keys().hasOnly([
+          'missionId', 'locationId', 'locationOrder', 'title', 'description',
+          'mode', 'difficulty', 'subject', 'questionCount', 'timeLimitSec',
+          'minAccuracyPct', 'hintLimit', 'xpReward', 'coinReward', 'crystalReward',
+          'badgeId', 'prerequisiteMissionIds', 'isBoss', 'guardianName',
+          'isPublished', 'order', 'updatedAt'
+        ])
+        && data.missionId is string && data.missionId.size() >= 1 && data.missionId.size() <= 100
+        && data.locationId is string && data.locationId.size() >= 1 && data.locationId.size() <= 60
+        && (!('locationOrder' in data) || (data.locationOrder is int && data.locationOrder >= 1 && data.locationOrder <= 20))
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 140
+        && (!('description' in data) || (data.description is string && data.description.size() <= 500))
+        && data.mode in ['treasure-hunt', 'submarine-exploration', 'crystal-rush', 'boss-battle', 'daily-challenge', 'subject-mission']
+        && data.difficulty in ['beginner', 'intermediate', 'advanced']
+        && data.subject is string && data.subject.size() >= 1 && data.subject.size() <= 40
+        && data.questionCount is int && data.questionCount >= 1 && data.questionCount <= 30
+        && (!('timeLimitSec' in data) || (data.timeLimitSec is int && data.timeLimitSec >= 0 && data.timeLimitSec <= 1800))
+        && data.minAccuracyPct is int && data.minAccuracyPct >= 0 && data.minAccuracyPct <= 100
+        && (!('hintLimit' in data) || (data.hintLimit is int && data.hintLimit >= 0 && data.hintLimit <= 10))
+        && data.xpReward is int && data.xpReward >= 10 && data.xpReward <= 600
+        && data.coinReward is int && data.coinReward >= 5 && data.coinReward <= 300
+        && (!('crystalReward' in data) || (data.crystalReward is int && data.crystalReward >= 0 && data.crystalReward <= 100))
+        && (!('badgeId' in data) || (data.badgeId is string && data.badgeId.size() <= 80))
+        && (!('prerequisiteMissionIds' in data) || (data.prerequisiteMissionIds is list && data.prerequisiteMissionIds.size() <= 20))
+        && (!('isBoss' in data) || data.isBoss is bool)
+        && (!('guardianName' in data) || (data.guardianName is string && data.guardianName.size() <= 100))
+        && data.isPublished is bool
+        && (!('order' in data) || (data.order is int && data.order >= 0 && data.order <= 500))
+        && (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 64));
+    }
+
+    function isValidOceanQuestProgress(data) {
+      return data.keys().hasAll(['uid', 'unlockedLocations', 'completedMissions', 'crystals', 'totalQuestXp'])
+        && data.keys().hasOnly([
+          'uid', 'unlockedLocations', 'completedMissions', 'missionBestScores',
+          'missionStars', 'seenQuestionIds', 'wrongQuestionIds', 'crystals',
+          'totalQuestXp', 'questBadges', 'dailyCompletions', 'totalRuns',
+          'totalCorrect', 'totalAttempted', 'updatedAt'
+        ])
+        && data.uid is string && data.uid == request.auth.uid && data.uid.size() <= 128
+        && data.unlockedLocations is list && data.unlockedLocations.size() <= 20
+        && data.completedMissions is list && data.completedMissions.size() <= 200
+        && (!('missionBestScores' in data) || data.missionBestScores is map)
+        && (!('missionStars' in data) || data.missionStars is map)
+        && (!('seenQuestionIds' in data) || (data.seenQuestionIds is list && data.seenQuestionIds.size() <= 2000))
+        && (!('wrongQuestionIds' in data) || (data.wrongQuestionIds is list && data.wrongQuestionIds.size() <= 1000))
+        && data.crystals is int && data.crystals >= 0 && data.crystals <= 1000000
+        && data.totalQuestXp is int && data.totalQuestXp >= 0 && data.totalQuestXp <= 5000000
+        && (!('questBadges' in data) || (data.questBadges is list && data.questBadges.size() <= 100))
+        && (!('dailyCompletions' in data) || (data.dailyCompletions is list && data.dailyCompletions.size() <= 400))
+        && (!('totalRuns' in data) || (data.totalRuns is int && data.totalRuns >= 0 && data.totalRuns <= 100000))
+        && (!('totalCorrect' in data) || (data.totalCorrect is int && data.totalCorrect >= 0 && data.totalCorrect <= 1000000))
+        && (!('totalAttempted' in data) || (data.totalAttempted is int && data.totalAttempted >= 0 && data.totalAttempted <= 1000000))
+        && (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 64));
+    }
+
+    function isValidOceanQuestClaim(data) {
+      return data.keys().hasAll(['claimId', 'userId', 'missionId', 'claimType', 'xpEarned', 'coinsEarned', 'claimedAt'])
+        && data.keys().hasOnly(['claimId', 'userId', 'missionId', 'claimType', 'xpEarned', 'coinsEarned', 'crystalsEarned', 'accuracy', 'claimedAt'])
+        && data.claimId is string && data.claimId.size() >= 1 && data.claimId.size() <= 128
+        && data.userId is string && data.userId == request.auth.uid && data.userId.size() <= 128
+        && data.missionId is string && data.missionId.size() >= 1 && data.missionId.size() <= 100
+        && data.claimType in ['first-clear', 'daily-challenge']
+        && data.xpEarned is int && data.xpEarned >= 0 && data.xpEarned <= 600
+        && data.coinsEarned is int && data.coinsEarned >= 0 && data.coinsEarned <= 300
+        && (!('crystalsEarned' in data) || (data.crystalsEarned is int && data.crystalsEarned >= 0 && data.crystalsEarned <= 100))
+        && (!('accuracy' in data) || (data.accuracy is number && data.accuracy >= 0 && data.accuracy <= 100))
+        && data.claimedAt is string && data.claimedAt.size() <= 64;
     }
 
     match /admins/{adminId} {
@@ -433,6 +520,183 @@ service cloud.firestore {
       allow get, list: if true;
       allow create, update: if isValidId(announcementId) && isAdmin() && isValidAnnouncement(incoming());
       allow delete: if isValidId(announcementId) && isAdmin();
+    }
+
+    match /oceanQuestMissions/{missionId} {
+      allow get, list: if (!('isPublished' in resource.data) || resource.data.isPublished == true || isAdmin());
+      allow create, update: if isValidId(missionId) && isAdmin() && isValidOceanQuestMission(incoming());
+      allow delete: if isValidId(missionId) && isAdmin();
+    }
+
+    match /oceanQuestProgress/{userId} {
+      allow get: if isValidId(userId) && isSignedIn() && (isOwner(userId) || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isValidId(userId) && isVerifiedUser() && isOwner(userId)
+        && isValidOceanQuestProgress(incoming());
+      allow update: if isValidId(userId) && isVerifiedUser() && (isOwner(userId) || isAdmin())
+        && isValidOceanQuestProgress(incoming())
+        && incoming().uid == existing().uid;
+      allow delete: if isAdmin();
+    }
+
+    function isValidPredictorQuestion(data) {
+      return data.keys().hasAll([
+          'questionId', 'examYear', 'tier', 'subject', 'topic', 'difficulty',
+          'questionEn', 'optionsEn', 'correctIndex', 'explanation',
+          'aiNoticeLabel', 'sourceType', 'isOfficialPyq', 'reviewStatus',
+          'isPublished', 'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'questionId', 'examYear', 'tier', 'subject', 'topic', 'difficulty',
+          'questionEn', 'optionsEn', 'correctIndex', 'explanation', 'stepByStep',
+          'relatedTopic', 'usefulnessReason', 'aiNoticeLabel', 'sourceType',
+          'isOfficialPyq', 'reviewStatus', 'isPublished', 'createdByUid',
+          'createdAt', 'updatedAt'
+        ])
+        && data.questionId is string && data.questionId.size() >= 1 && data.questionId.size() <= 100
+        && data.examYear is int && data.examYear >= 2026 && data.examYear <= 2035
+        && data.tier in ['Tier 1', 'Tier 2']
+        && data.subject in ['quant', 'reasoning', 'english', 'ga', 'computer']
+        && data.topic is string && data.topic.size() >= 1 && data.topic.size() <= 80
+        && data.difficulty in ['Easy', 'Medium', 'Hard']
+        && data.questionEn is string && data.questionEn.size() >= 1 && data.questionEn.size() <= 1200
+        && data.optionsEn is list && data.optionsEn.size() == 4
+        && data.optionsEn[0] is string && data.optionsEn[0].size() <= 400
+        && data.correctIndex is int && data.correctIndex >= 0 && data.correctIndex <= 3
+        && data.explanation is string && data.explanation.size() >= 1 && data.explanation.size() <= 2000
+        && (!('stepByStep' in data) || (data.stepByStep is list && data.stepByStep.size() <= 20))
+        && (!('relatedTopic' in data) || (data.relatedTopic is string && data.relatedTopic.size() <= 80))
+        && (!('usefulnessReason' in data) || (data.usefulnessReason is string && data.usefulnessReason.size() <= 600))
+        && data.aiNoticeLabel == 'AI-GENERATED EXPECTED PRACTICE QUESTION – NOT AN OFFICIAL SSC QUESTION'
+        && data.sourceType == 'AI_GENERATED'
+        && data.isOfficialPyq == false
+        && data.reviewStatus in ['pending', 'approved', 'rejected']
+        && data.isPublished is bool
+        && !(data.reviewStatus != 'approved' && data.isPublished == true)
+        && (!('createdByUid' in data) || (data.createdByUid is string && data.createdByUid.size() <= 128))
+        && data.createdAt is string && data.createdAt.size() <= 64
+        && (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 64));
+    }
+
+    function isValidPredictorCategory(data) {
+      return data.keys().hasAll(['categoryId', 'subject', 'topic', 'tier', 'targetYear', 'isOutdated', 'updatedAt'])
+        && data.keys().hasOnly([
+          'categoryId', 'subject', 'topic', 'tier', 'targetYear',
+          'priorityOverride', 'isOutdated', 'outdatedNote', 'syllabusWeightage', 'updatedAt'
+        ])
+        && data.categoryId is string && data.categoryId.size() >= 1 && data.categoryId.size() <= 100
+        && data.subject in ['quant', 'reasoning', 'english', 'ga', 'computer']
+        && data.topic is string && data.topic.size() >= 1 && data.topic.size() <= 80
+        && data.tier in ['Tier 1', 'Tier 2']
+        && data.targetYear is int && data.targetYear >= 2026 && data.targetYear <= 2035
+        && (!('priorityOverride' in data) || data.priorityOverride in ['Critical', 'High', 'Moderate', 'Maintain'])
+        && data.isOutdated is bool
+        && (!('outdatedNote' in data) || (data.outdatedNote is string && data.outdatedNote.size() <= 400))
+        && (!('syllabusWeightage' in data) || (data.syllabusWeightage is string && data.syllabusWeightage.size() <= 120))
+        && data.updatedAt is string && data.updatedAt.size() <= 64;
+    }
+
+    function isValidPredictionReport(data) {
+      return data.keys().hasAll([
+          'reportId', 'examYear', 'tier', 'title',
+          'predictedTopics', 'actualTopics', 'coveragePct', 'isOutdated', 'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'reportId', 'examYear', 'tier', 'title',
+          'predictedTopics', 'actualTopics', 'matchedTopics', 'missedTopics',
+          'coveragePct', 'notes', 'isOutdated', 'createdAt', 'updatedAt'
+        ])
+        && data.reportId is string && data.reportId.size() >= 1 && data.reportId.size() <= 100
+        && data.examYear is int && data.examYear >= 2016 && data.examYear <= 2035
+        && data.tier in ['Tier 1', 'Tier 2']
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 180
+        && data.predictedTopics is list && data.predictedTopics.size() <= 50
+        && data.actualTopics is list && data.actualTopics.size() <= 50
+        && (!('matchedTopics' in data) || (data.matchedTopics is list && data.matchedTopics.size() <= 50))
+        && (!('missedTopics' in data) || (data.missedTopics is list && data.missedTopics.size() <= 50))
+        && data.coveragePct is number && data.coveragePct >= 0 && data.coveragePct <= 100
+        && (!('notes' in data) || (data.notes is string && data.notes.size() <= 1500))
+        && data.isOutdated is bool
+        && data.createdAt is string && data.createdAt.size() <= 64
+        && (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 64));
+    }
+
+    function isValidCurrentAffairsItem(data) {
+      return data.keys().hasAll([
+          'articleId', 'category', 'title', 'summary',
+          'publishedDate', 'sourceName', 'sourceUrl', 'targetYear', 'isPublished', 'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'articleId', 'category', 'title', 'summary', 'examRelevance',
+          'publishedDate', 'sourceName', 'sourceUrl', 'targetYear', 'isPublished', 'createdAt'
+        ])
+        && data.articleId is string && data.articleId.size() >= 1 && data.articleId.size() <= 100
+        && data.category in [
+          'National', 'International', 'Government Schemes', 'Awards & Appointments',
+          'Science & Technology', 'Economy & Reports', 'Sports & Major Events'
+        ]
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 200
+        && data.summary is string && data.summary.size() >= 1 && data.summary.size() <= 1200
+        && (!('examRelevance' in data) || (data.examRelevance is string && data.examRelevance.size() <= 500))
+        && data.publishedDate is string && data.publishedDate.size() >= 4 && data.publishedDate.size() <= 40
+        && data.sourceName is string && data.sourceName.size() >= 1 && data.sourceName.size() <= 100
+        && data.sourceUrl is string && data.sourceUrl.size() >= 8 && data.sourceUrl.size() <= 500
+        && data.targetYear is int && data.targetYear >= 2024 && data.targetYear <= 2035
+        && data.isPublished is bool
+        && data.createdAt is string && data.createdAt.size() <= 64;
+    }
+
+    match /oceanQuestClaims/{claimId} {
+      allow get: if isValidId(claimId) && isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      // Immutable one-time claim record: prevents duplicate first-clear and daily reward claims
+      allow create: if isValidId(claimId) && isVerifiedUser()
+        && isValidOceanQuestClaim(incoming())
+        && !exists(/databases/$(database)/documents/oceanQuestClaims/$(claimId));
+      allow update: if false;
+      allow delete: if isAdmin();
+    }
+
+    match /predictorQuestions/{questionId} {
+      allow get: if isValidId(questionId) && (
+        (resource.data.reviewStatus == 'approved' && resource.data.isPublished == true) ||
+        (isSignedIn() && resource.data.createdByUid == request.auth.uid) ||
+        isAdmin()
+      );
+      allow list: if (
+        (resource.data.reviewStatus == 'approved' && resource.data.isPublished == true) ||
+        (isVerifiedUser() && (
+          resource.data.createdByUid == request.auth.uid ||
+          request.auth.token.email == 'vijaymartin72@gmail.com'
+        ))
+      );
+      allow create: if isValidId(questionId) && isVerifiedUser() && isValidPredictorQuestion(incoming()) && (
+        isAdmin() ||
+        (incoming().createdByUid == request.auth.uid && incoming().reviewStatus == 'pending' && incoming().isPublished == false)
+      );
+      allow update: if isValidId(questionId) && isAdmin() && isValidPredictorQuestion(incoming())
+        && incoming().createdAt == existing().createdAt;
+      allow delete: if isValidId(questionId) && isAdmin();
+    }
+
+    match /predictorCategories/{categoryId} {
+      allow get, list: if true;
+      allow create, update: if isValidId(categoryId) && isAdmin() && isValidPredictorCategory(incoming());
+      allow delete: if isValidId(categoryId) && isAdmin();
+    }
+
+    match /predictionReports/{reportId} {
+      allow get, list: if true;
+      allow create, update: if isValidId(reportId) && isAdmin() && isValidPredictionReport(incoming());
+      allow delete: if isValidId(reportId) && isAdmin();
+    }
+
+    match /currentAffairs/{articleId} {
+      allow get: if isValidId(articleId) && (resource.data.isPublished == true || isAdmin());
+      allow list: if resource.data.isPublished == true ||
+        (isVerifiedUser() && request.auth.token.email == 'vijaymartin72@gmail.com');
+      allow create, update: if isValidId(articleId) && isAdmin() && isValidCurrentAffairsItem(incoming());
+      allow delete: if isValidId(articleId) && isAdmin();
     }
   }
 }

@@ -57,7 +57,10 @@
         "completedTopics": { "type": "array" },
         "subjectProgress": { "type": "object" },
         "totalStudyMinutes": { "type": "integer" },
-        "lastStudiedAt": { "type": "string", "maxLength": 64 }
+        "lastStudiedAt": { "type": "string", "maxLength": 64 },
+        "difficultQuestionIds": { "type": "array" },
+        "revisionListIds": { "type": "array" },
+        "pyqAttempts": { "type": "object" }
       },
       "required": ["uid", "completedLessonIds", "completedTopics", "totalStudyMinutes"]
     },
@@ -116,21 +119,27 @@
       "type": "object",
       "properties": {
         "id": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "questionNumber": { "type": "integer" },
         "subject": { "type": "string", "maxLength": 60 },
         "topic": { "type": "string", "maxLength": 80 },
         "year": { "type": "integer" },
+        "examDate": { "type": "string", "maxLength": 40 },
         "shift": { "type": "string", "maxLength": 80 },
         "tier": { "type": "string", "maxLength": 20 },
         "difficulty": { "type": "string", "maxLength": 20 },
         "sourceType": { "type": "string", "enum": ["PYQ", "AI_GENERATED"] },
         "sourceLabel": { "type": "string", "maxLength": 160 },
+        "answerStatus": { "type": "string", "enum": ["official", "unofficial", "needs_verification"] },
         "isVerified": { "type": "boolean" },
         "isPublished": { "type": "boolean" },
         "language": { "type": "string", "maxLength": 16 },
         "questionEn": { "type": "string", "maxLength": 1200 },
+        "questionHi": { "type": "string", "maxLength": 1200 },
         "optionsEn": { "type": "array" },
         "correctIndex": { "type": "integer" },
         "explanations": { "type": "object" },
+        "stepByStep": { "type": "array" },
+        "shortcutMethod": { "type": "string", "maxLength": 800 },
         "sourceUrls": { "type": "array" }
       },
       "required": ["subject", "topic", "tier", "sourceType", "questionEn", "correctIndex", "isPublished"]
@@ -289,6 +298,163 @@
         "createdAt": { "type": "string", "maxLength": 64 }
       },
       "required": ["title", "body"]
+    },
+    "OceanQuestMission": {
+      "title": "OceanQuestMission",
+      "description": "Admin-managed Ocean Quest underwater mission definition",
+      "type": "object",
+      "properties": {
+        "missionId": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "locationId": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "locationOrder": { "type": "integer" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 140 },
+        "description": { "type": "string", "maxLength": 500 },
+        "mode": { "type": "string", "enum": ["treasure-hunt", "submarine-exploration", "crystal-rush", "boss-battle", "daily-challenge", "subject-mission"] },
+        "difficulty": { "type": "string", "enum": ["beginner", "intermediate", "advanced"] },
+        "subject": { "type": "string", "maxLength": 40 },
+        "questionCount": { "type": "integer" },
+        "timeLimitSec": { "type": "integer" },
+        "minAccuracyPct": { "type": "integer" },
+        "hintLimit": { "type": "integer" },
+        "xpReward": { "type": "integer" },
+        "coinReward": { "type": "integer" },
+        "crystalReward": { "type": "integer" },
+        "badgeId": { "type": "string", "maxLength": 80 },
+        "prerequisiteMissionIds": { "type": "array" },
+        "isBoss": { "type": "boolean" },
+        "guardianName": { "type": "string", "maxLength": 100 },
+        "isPublished": { "type": "boolean" },
+        "order": { "type": "integer" },
+        "updatedAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["missionId", "locationId", "title", "mode", "difficulty", "subject", "questionCount", "minAccuracyPct", "xpReward", "coinReward", "isPublished"]
+    },
+    "OceanQuestProgress": {
+      "title": "OceanQuestProgress",
+      "description": "Per-student Ocean Quest progression, unlocked locations, seen questions, and best scores",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "unlockedLocations": { "type": "array" },
+        "completedMissions": { "type": "array" },
+        "missionBestScores": { "type": "object" },
+        "missionStars": { "type": "object" },
+        "seenQuestionIds": { "type": "array" },
+        "wrongQuestionIds": { "type": "array" },
+        "crystals": { "type": "integer" },
+        "totalQuestXp": { "type": "integer" },
+        "questBadges": { "type": "array" },
+        "dailyCompletions": { "type": "array" },
+        "totalRuns": { "type": "integer" },
+        "totalCorrect": { "type": "integer" },
+        "totalAttempted": { "type": "integer" },
+        "updatedAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["uid", "unlockedLocations", "completedMissions", "crystals", "totalQuestXp"]
+    },
+    "OceanQuestClaim": {
+      "title": "OceanQuestClaim",
+      "description": "Immutable one-time reward claim record preventing duplicate mission/daily bonus claims",
+      "type": "object",
+      "properties": {
+        "claimId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "missionId": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "claimType": { "type": "string", "enum": ["first-clear", "daily-challenge"] },
+        "xpEarned": { "type": "integer" },
+        "coinsEarned": { "type": "integer" },
+        "crystalsEarned": { "type": "integer" },
+        "accuracy": { "type": "number" },
+        "claimedAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["claimId", "userId", "missionId", "claimType", "xpEarned", "coinsEarned", "claimedAt"]
+    },
+    "PredictorQuestion": {
+      "title": "PredictorQuestion",
+      "description": "AI-generated expected practice question requiring admin review and mandatory non-official label",
+      "type": "object",
+      "properties": {
+        "questionId": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "examYear": { "type": "integer" },
+        "tier": { "type": "string", "enum": ["Tier 1", "Tier 2"] },
+        "subject": { "type": "string", "enum": ["quant", "reasoning", "english", "ga", "computer"] },
+        "topic": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "difficulty": { "type": "string", "enum": ["Easy", "Medium", "Hard"] },
+        "questionEn": { "type": "string", "minLength": 1, "maxLength": 1200 },
+        "optionsEn": { "type": "array" },
+        "correctIndex": { "type": "integer" },
+        "explanation": { "type": "string", "minLength": 1, "maxLength": 2000 },
+        "stepByStep": { "type": "array" },
+        "relatedTopic": { "type": "string", "maxLength": 80 },
+        "usefulnessReason": { "type": "string", "maxLength": 600 },
+        "aiNoticeLabel": { "type": "string", "maxLength": 120 },
+        "sourceType": { "type": "string", "enum": ["AI_GENERATED"] },
+        "isOfficialPyq": { "type": "boolean" },
+        "reviewStatus": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "isPublished": { "type": "boolean" },
+        "createdByUid": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "maxLength": 64 },
+        "updatedAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["questionId", "examYear", "tier", "subject", "topic", "difficulty", "questionEn", "optionsEn", "correctIndex", "explanation", "aiNoticeLabel", "sourceType", "isOfficialPyq", "reviewStatus", "isPublished", "createdAt"]
+    },
+    "PredictorCategory": {
+      "title": "PredictorCategory",
+      "description": "Admin-managed topic prediction category overrides and outdated trend flags",
+      "type": "object",
+      "properties": {
+        "categoryId": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "subject": { "type": "string", "enum": ["quant", "reasoning", "english", "ga", "computer"] },
+        "topic": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "tier": { "type": "string", "enum": ["Tier 1", "Tier 2"] },
+        "targetYear": { "type": "integer" },
+        "priorityOverride": { "type": "string", "enum": ["Critical", "High", "Moderate", "Maintain"] },
+        "isOutdated": { "type": "boolean" },
+        "outdatedNote": { "type": "string", "maxLength": 400 },
+        "syllabusWeightage": { "type": "string", "maxLength": 120 },
+        "updatedAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["categoryId", "subject", "topic", "tier", "targetYear", "isOutdated", "updatedAt"]
+    },
+    "PredictionReport": {
+      "title": "PredictionReport",
+      "description": "Prediction accuracy report comparing predicted topics against actual imported official SSC CGL papers",
+      "type": "object",
+      "properties": {
+        "reportId": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "examYear": { "type": "integer" },
+        "tier": { "type": "string", "enum": ["Tier 1", "Tier 2"] },
+        "title": { "type": "string", "minLength": 1, "maxLength": 180 },
+        "predictedTopics": { "type": "array" },
+        "actualTopics": { "type": "array" },
+        "matchedTopics": { "type": "array" },
+        "missedTopics": { "type": "array" },
+        "coveragePct": { "type": "number" },
+        "notes": { "type": "string", "maxLength": 1500 },
+        "isOutdated": { "type": "boolean" },
+        "createdAt": { "type": "string", "maxLength": 64 },
+        "updatedAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["reportId", "examYear", "tier", "title", "predictedTopics", "actualTopics", "coveragePct", "isOutdated", "createdAt"]
+    },
+    "CurrentAffairsItem": {
+      "title": "CurrentAffairsItem",
+      "description": "Dated SSC CGL current affairs summary with source verification link",
+      "type": "object",
+      "properties": {
+        "articleId": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "category": { "type": "string", "enum": ["National", "International", "Government Schemes", "Awards & Appointments", "Science & Technology", "Economy & Reports", "Sports & Major Events"] },
+        "title": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "summary": { "type": "string", "minLength": 1, "maxLength": 1200 },
+        "examRelevance": { "type": "string", "maxLength": 500 },
+        "publishedDate": { "type": "string", "minLength": 4, "maxLength": 40 },
+        "sourceName": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "sourceUrl": { "type": "string", "minLength": 8, "maxLength": 500 },
+        "targetYear": { "type": "integer" },
+        "isPublished": { "type": "boolean" },
+        "createdAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["articleId", "category", "title", "summary", "publishedDate", "sourceName", "sourceUrl", "targetYear", "isPublished", "createdAt"]
     }
   },
   "firestore": {
@@ -359,6 +525,34 @@
     "/announcements/{announcementId}": {
       "schema": { "$ref": "#/entities/Announcement" },
       "description": "Official academy notices managed by admins"
+    },
+    "/oceanQuestMissions/{missionId}": {
+      "schema": { "$ref": "#/entities/OceanQuestMission" },
+      "description": "Ocean Quest underwater adventure missions managed by admins"
+    },
+    "/oceanQuestProgress/{userId}": {
+      "schema": { "$ref": "#/entities/OceanQuestProgress" },
+      "description": "Per-student Ocean Quest progression & revision queue"
+    },
+    "/oceanQuestClaims/{claimId}": {
+      "schema": { "$ref": "#/entities/OceanQuestClaim" },
+      "description": "Immutable one-time mission and daily challenge reward claim records"
+    },
+    "/predictorQuestions/{questionId}": {
+      "schema": { "$ref": "#/entities/PredictorQuestion" },
+      "description": "AI-generated expected practice questions reviewed and approved by admins"
+    },
+    "/predictorCategories/{categoryId}": {
+      "schema": { "$ref": "#/entities/PredictorCategory" },
+      "description": "Admin-managed topic prediction categories and outdated trend markers"
+    },
+    "/predictionReports/{reportId}": {
+      "schema": { "$ref": "#/entities/PredictionReport" },
+      "description": "Historical topic prediction accuracy reports comparing predicted vs actual SSC CGL topics"
+    },
+    "/currentAffairs/{articleId}": {
+      "schema": { "$ref": "#/entities/CurrentAffairsItem" },
+      "description": "Dated SSC CGL current affairs summaries with source verification links"
     }
   }
 }

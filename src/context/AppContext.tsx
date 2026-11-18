@@ -4,27 +4,47 @@ import {
   collection,
   deleteDoc,
   doc,
+  DocumentData,
   getDoc,
   getDocs,
   limit,
   orderBy,
   query,
+  Query,
+  QueryDocumentSnapshot,
+  QuerySnapshot,
   setDoc,
+  startAfter,
   updateDoc,
   where,
   writeBatch,
 } from 'firebase/firestore';
 import {
+  AI_EXPECTED_QUESTION_NOTICE,
   Announcement,
+  AnswerVerificationStatus,
   BookmarkItem,
   ChatMessage,
   CourseDef,
+  CurrentAffairsCategory,
+  CurrentAffairsItem,
+  ExamTier,
   GameModeId,
   GameSession,
   LanguageCode,
   LeaderboardEntry,
+  LocalReminderNotification,
   MainTab,
   MockTestConfig,
+  NotificationPreferences,
+  OceanQuestEvalResponse,
+  OceanQuestMission,
+  OceanQuestProgress,
+  PredictionAccuracyReport,
+  PredictorCategoryOverride,
+  PredictorQuestion,
+  PredictorReviewStatus,
+  PyqAttemptRecord,
   Question,
   StudyPlan,
   SubjectId,
@@ -32,6 +52,21 @@ import {
   UserProfile,
   VideoLesson,
 } from '../types/examverse';
+import {
+  CURATED_CURRENT_AFFAIRS_SEED,
+  HISTORICAL_ACCURACY_BENCHMARK_SEED,
+} from '../data/futurePredictorEngine';
+import {
+  OCEAN_LOCATIONS,
+  OCEAN_MISSIONS_SEED,
+  createDefaultOceanQuestProgress,
+  getLocationUnlockStatus,
+} from '../data/oceanQuestCatalog';
+import {
+  buildOceanStudyReminder,
+  shouldFireDailyScheduledReminder,
+  triggerBrowserLocalNotification,
+} from '../lib/localNotifications';
 import {
   auth,
   checkUsernameAvailable,
@@ -66,17 +101,30 @@ interface PersistedLocal {
   onboarded: boolean;
   theme: 'light' | 'dark';
   soundMuted: boolean;
+  notificationPrefs: NotificationPreferences;
+  localReminders: LocalReminderNotification[];
+  lastDailyReminderDate: string | null;
+  lastGoalCelebrationDate: string | null;
   profile: UserProfile;
   testAttempts: TestAttempt[];
   gameSessions: GameSession[];
   bookmarks: BookmarkItem[];
+  difficultQuestionIds: string[];
+  revisionListIds: string[];
+  pyqAttempts: Record<string, PyqAttemptRecord>;
   studyPlan: StudyPlan | null;
   chatHistory: ChatMessage[];
   customQuestions: Question[];
   customVideos: VideoLesson[];
   customMockTests: MockTestConfig[];
   customCourses: CourseDef[];
+  customOceanMissions: OceanQuestMission[];
+  oceanQuestProgress: OceanQuestProgress;
   announcements: Announcement[];
+  customPredictorQuestions?: PredictorQuestion[];
+  customPredictorCategories?: PredictorCategoryOverride[];
+  customPredictionReports?: PredictionAccuracyReport[];
+  customCurrentAffairs?: CurrentAffairsItem[];
 }
 
 export interface AdminStudentSummary {
@@ -136,6 +184,14 @@ const DEFAULT_ANNOUNCEMENTS: Announcement[] = [
   },
 ];
 
+const DEFAULT_NOTIFICATIONS: NotificationPreferences = {
+  dailyReminder: true,
+  mockAlerts: true,
+  streakAlerts: true,
+  reminderTime: '19:00',
+  browserPushEnabled: false,
+};
+
 function loadInitialState(): PersistedLocal {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -145,17 +201,33 @@ function loadInitialState(): PersistedLocal {
         onboarded: parsed.onboarded ?? false,
         theme: parsed.theme ?? 'light',
         soundMuted: parsed.soundMuted ?? false,
+        notificationPrefs: { ...DEFAULT_NOTIFICATIONS, ...(parsed.notificationPrefs || {}) },
+        localReminders: parsed.localReminders ?? [],
+        lastDailyReminderDate: parsed.lastDailyReminderDate ?? null,
+        lastGoalCelebrationDate: parsed.lastGoalCelebrationDate ?? null,
         profile: { ...DEFAULT_PROFILE, ...(parsed.profile || {}) },
         testAttempts: parsed.testAttempts ?? [],
         gameSessions: parsed.gameSessions ?? [],
         bookmarks: parsed.bookmarks ?? [],
+        difficultQuestionIds: parsed.difficultQuestionIds ?? [],
+        revisionListIds: parsed.revisionListIds ?? [],
+        pyqAttempts: parsed.pyqAttempts ?? {},
         studyPlan: parsed.studyPlan ?? null,
         chatHistory: parsed.chatHistory ?? [],
         customQuestions: parsed.customQuestions ?? [],
         customVideos: parsed.customVideos ?? [],
         customMockTests: parsed.customMockTests ?? [],
         customCourses: parsed.customCourses ?? [],
+        customOceanMissions: parsed.customOceanMissions ?? [],
+        oceanQuestProgress: {
+          ...createDefaultOceanQuestProgress(parsed.profile?.uid || DEFAULT_PROFILE.uid),
+          ...(parsed.oceanQuestProgress || {}),
+        },
         announcements: parsed.announcements ?? DEFAULT_ANNOUNCEMENTS,
+        customPredictorQuestions: parsed.customPredictorQuestions ?? [],
+        customPredictorCategories: parsed.customPredictorCategories ?? [],
+        customPredictionReports: parsed.customPredictionReports ?? [],
+        customCurrentAffairs: parsed.customCurrentAffairs ?? [],
       };
     }
   } catch {
@@ -165,16 +237,25 @@ function loadInitialState(): PersistedLocal {
     onboarded: false,
     theme: 'light',
     soundMuted: false,
+    notificationPrefs: DEFAULT_NOTIFICATIONS,
+    localReminders: [],
+    lastDailyReminderDate: null,
+    lastGoalCelebrationDate: null,
     profile: DEFAULT_PROFILE,
     testAttempts: [],
     gameSessions: [],
     bookmarks: [],
+    difficultQuestionIds: [],
+    revisionListIds: [],
+    pyqAttempts: {},
     studyPlan: null,
     chatHistory: [],
     customQuestions: [],
     customVideos: [],
     customMockTests: [],
     customCourses: [],
+    customOceanMissions: [],
+    oceanQuestProgress: createDefaultOceanQuestProgress(DEFAULT_PROFILE.uid),
     announcements: DEFAULT_ANNOUNCEMENTS,
   };
 }
@@ -193,10 +274,22 @@ interface AppContextValue {
   completeOnboarding: (lang: LanguageCode, targetPost: string, goalMinutes: number) => void;
   activeTab: MainTab;
   setActiveTab: (tab: MainTab) => void;
+  tutorOpen: boolean;
+  openAiTutor: () => void;
+  closeAiTutor: () => void;
   theme: 'light' | 'dark';
   toggleTheme: () => void;
   soundMuted: boolean;
   toggleSound: () => void;
+  notificationPrefs: NotificationPreferences;
+  updateNotificationPrefs: (patch: Partial<NotificationPreferences>) => void;
+  localReminders: LocalReminderNotification[];
+  activeReminderBanner: LocalReminderNotification | null;
+  dismissReminderBanner: () => void;
+  markAllRemindersRead: () => void;
+  triggerGoalReminder: (forceKind?: LocalReminderNotification['kind']) => LocalReminderNotification;
+  publicDataError: string | null;
+  retryPublicLoad: () => Promise<void>;
   language: LanguageCode;
   setLanguage: (lang: LanguageCode) => void;
   firebaseUser: User | null;
@@ -223,6 +316,10 @@ interface AppContextValue {
   testAttempts: TestAttempt[];
   gameSessions: GameSession[];
   bookmarks: BookmarkItem[];
+  difficultQuestionIds: string[];
+  revisionListIds: string[];
+  pyqAttempts: Record<string, PyqAttemptRecord>;
+  loadingQuestions: boolean;
   studyPlan: StudyPlan | null;
   saveStudyPlan: (plan: StudyPlan) => Promise<void>;
   chatHistory: ChatMessage[];
@@ -232,6 +329,9 @@ interface AppContextValue {
   leaderboard: LeaderboardEntry[];
   announcements: Announcement[];
   recordQuestionResult: (subject: SubjectId, isCorrect: boolean, xpBonus?: number) => void;
+  recordPyqAttempt: (question: Question, selectedIndex: number) => void;
+  toggleDifficultQuestion: (questionId: string) => void;
+  toggleRevisionQuestion: (questionId: string) => void;
   recordGameSession: (
     gameMode: GameModeId,
     gameTitle: string,
@@ -261,11 +361,44 @@ interface AppContextValue {
   addAnnouncement: (title: string, body: string) => Promise<void>;
   seedFirestoreDatabase: () => Promise<{ seededDocs: number }>;
   toggleStudentActive: (uid: string, nextActive: boolean) => Promise<void>;
+  oceanQuestMissions: OceanQuestMission[];
+  oceanQuestProgress: OceanQuestProgress;
+  evaluateOceanQuestRun: (input: {
+    mission: OceanQuestMission;
+    correctCount: number;
+    totalQuestions: number;
+    timeRemainingSec: number;
+    hintsUsed: number;
+    comboMax: number;
+    attemptedQuestionIds: string[];
+    wrongQuestionIds: string[];
+    subjectBreakdown: Partial<Record<SubjectId, { attempted: number; correct: number }>>;
+  }) => Promise<OceanQuestEvalResponse>;
+  upsertOceanQuestMission: (mission: OceanQuestMission) => Promise<void>;
+  toggleOceanQuestMissionPublished: (missionId: string, isPublished: boolean) => Promise<void>;
+  deleteOceanQuestMission: (missionId: string) => Promise<void>;
   fetchAdminAnalytics: () => Promise<{
     students: AdminStudentSummary[];
     attempts: TestAttempt[];
     gameSessions: GameSession[];
+    oceanProgress: OceanQuestProgress[];
   }>;
+  predictorQuestions: PredictorQuestion[];
+  predictorCategories: PredictorCategoryOverride[];
+  predictionReports: PredictionAccuracyReport[];
+  currentAffairs: CurrentAffairsItem[];
+  savePredictorQuestion: (q: PredictorQuestion) => Promise<void>;
+  reviewPredictorQuestion: (
+    id: string,
+    status: PredictorReviewStatus,
+    patch?: Partial<PredictorQuestion>
+  ) => Promise<void>;
+  deletePredictorQuestion: (id: string) => Promise<void>;
+  upsertPredictorCategory: (cat: PredictorCategoryOverride) => Promise<void>;
+  savePredictionReport: (report: PredictionAccuracyReport) => Promise<void>;
+  togglePredictionReportOutdated: (id: string, isOutdated: boolean) => Promise<void>;
+  upsertCurrentAffairsItem: (item: CurrentAffairsItem) => Promise<void>;
+  deleteCurrentAffairsItem: (id: string) => Promise<void>;
   tutorPrefill: string | null;
   openTutorWithPrompt: (prompt: string) => void;
   clearTutorPrefill: () => void;
@@ -281,7 +414,8 @@ const AppContext = createContext<AppContextValue | null>(null);
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [state, setState] = useState<PersistedLocal>(loadInitialState);
   const [showSplash, setShowSplash] = useState(true);
-  const [activeTab, setActiveTab] = useState<MainTab>('home');
+  const [activeTabState, setActiveTabState] = useState<MainTab>('home');
+  const [tutorOpen, setTutorOpen] = useState(false);
   const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [isServerAdmin, setIsServerAdmin] = useState(false);
@@ -290,9 +424,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [remoteVideos, setRemoteVideos] = useState<VideoLesson[]>([]);
   const [remoteMockTests, setRemoteMockTests] = useState<MockTestConfig[]>([]);
   const [remoteCourses, setRemoteCourses] = useState<CourseDef[]>([]);
+  const [remoteOceanMissions, setRemoteOceanMissions] = useState<OceanQuestMission[]>([]);
   const [remoteAnnouncements, setRemoteAnnouncements] = useState<Announcement[]>([]);
+  const [remotePredictorQuestions, setRemotePredictorQuestions] = useState<PredictorQuestion[]>([]);
+  const [remotePredictorCategories, setRemotePredictorCategories] = useState<PredictorCategoryOverride[]>([]);
+  const [remotePredictionReports, setRemotePredictionReports] = useState<PredictionAccuracyReport[]>([]);
+  const [remoteCurrentAffairs, setRemoteCurrentAffairs] = useState<CurrentAffairsItem[]>([]);
+  const [loadingQuestions, setLoadingQuestions] = useState(false);
+  const [publicDataError, setPublicDataError] = useState<string | null>(null);
   const [tutorPrefill, setTutorPrefill] = useState<string | null>(null);
   const [rewardToast, setRewardToast] = useState<RewardToast | null>(null);
+  const [activeReminderBanner, setActiveReminderBanner] =
+    useState<LocalReminderNotification | null>(null);
+
+  const setActiveTab = (tab: MainTab) => {
+    setTutorOpen(false);
+    setActiveTabState(tab);
+  };
 
   useEffect(() => {
     const timer = setTimeout(() => setShowSplash(false), 1350);
@@ -320,6 +468,81 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [state]);
 
+  const dispatchOceanReminder = (
+    forceKind?: LocalReminderNotification['kind'],
+    markDailySent = false,
+    markCelebrated = false
+  ): LocalReminderNotification => {
+    const reminder = buildOceanStudyReminder({
+      displayName: state.profile.displayName,
+      username: state.profile.username,
+      studiedMinutes: state.profile.studyMinutesToday,
+      goalMinutes: state.profile.dailyGoalMinutes,
+      streak: state.profile.streak,
+      forceKind,
+    });
+    const todayIso = new Date().toISOString().slice(0, 10);
+    setState((prev) => ({
+      ...prev,
+      localReminders: [reminder, ...prev.localReminders].slice(0, 10),
+      lastDailyReminderDate: markDailySent ? todayIso : prev.lastDailyReminderDate,
+      lastGoalCelebrationDate: markCelebrated ? todayIso : prev.lastGoalCelebrationDate,
+    }));
+    setActiveReminderBanner(reminder);
+    triggerBrowserLocalNotification(reminder, state.notificationPrefs);
+    setTimeout(() => {
+      setActiveReminderBanner((cur) => (cur?.id === reminder.id ? null : cur));
+    }, 8000);
+    return reminder;
+  };
+
+  // Gentle local goal scheduler & 100% milestone ocean celebration
+  useEffect(() => {
+    if (!state.onboarded || showSplash) return;
+
+    const evaluateReminders = () => {
+      const now = new Date();
+      const todayIso = now.toISOString().slice(0, 10);
+
+      if (
+        state.notificationPrefs.dailyReminder &&
+        state.profile.studyMinutesToday >= state.profile.dailyGoalMinutes &&
+        state.lastGoalCelebrationDate !== todayIso
+      ) {
+        dispatchOceanReminder('goal-complete', false, true);
+        return;
+      }
+
+      if (
+        shouldFireDailyScheduledReminder(
+          now,
+          state.notificationPrefs,
+          state.lastDailyReminderDate,
+          state.profile.studyMinutesToday,
+          state.profile.dailyGoalMinutes
+        )
+      ) {
+        dispatchOceanReminder(undefined, true, false);
+      }
+    };
+
+    const checkTimer = setTimeout(evaluateReminders, 12000);
+    const interval = setInterval(evaluateReminders, 30000);
+    return () => {
+      clearTimeout(checkTimer);
+      clearInterval(interval);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    state.onboarded,
+    showSplash,
+    state.notificationPrefs,
+    state.profile.studyMinutesToday,
+    state.profile.dailyGoalMinutes,
+    state.lastDailyReminderDate,
+    state.lastGoalCelebrationDate,
+  ]);
+
   const showToast = (title: string, xp: number, coins: number) => {
     setRewardToast({ id: String(Date.now()), title, xp, coins });
     setTimeout(() => {
@@ -331,10 +554,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     firebaseUser && firebaseUser.emailVerified && isServerAdmin
   );
 
-  const syncUserProgressToFirestore = async (prof: UserProfile) => {
+  const syncUserProgressToFirestore = async (
+    prof: UserProfile,
+    overrides?: {
+      difficultQuestionIds?: string[];
+      revisionListIds?: string[];
+      pyqAttempts?: Record<string, PyqAttemptRecord>;
+    }
+  ) => {
     if (!auth.currentUser || !auth.currentUser.emailVerified) return;
     if (prof.isActive === false) return;
     const uid = auth.currentUser.uid;
+    const diffIds = (overrides?.difficultQuestionIds ?? state.difficultQuestionIds).slice(0, 1000);
+    const revIds = (overrides?.revisionListIds ?? state.revisionListIds).slice(0, 1000);
+    const rawAttempts = overrides?.pyqAttempts ?? state.pyqAttempts;
+    const compactAttempts = Object.fromEntries(Object.entries(rawAttempts).slice(-400));
     try {
       await setDoc(
         doc(db, 'userProgress', uid),
@@ -343,6 +577,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           completedLessonIds: prof.completedLessons.slice(0, 500),
           completedTopics: prof.completedSyllabusTopics.slice(0, 500),
           subjectProgress: prof.subjectStats,
+          difficultQuestionIds: diffIds,
+          revisionListIds: revIds,
+          pyqAttempts: compactAttempts,
           totalStudyMinutes: Math.max(0, Math.round(prof.studyMinutesToday)),
           lastStudiedAt: new Date().toISOString(),
         },
@@ -429,7 +666,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  const loadPublicCollections = async () => {
+  const loadPublicCollections = async (includeDrafts = isServerAdmin) => {
+    setPublicDataError(null);
     try {
       const lbSnap = await getDocs(
         query(collection(db, 'leaderboards'), orderBy('xp', 'desc'), limit(20))
@@ -463,46 +701,94 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       if (anns.length > 0) setRemoteAnnouncements(anns);
 
-      // Load published questions, videoLessons, mockTests, courses
-      const [qSnap, vSnap, mtSnap, cSnap] = await Promise.all([
-        getDocs(query(collection(db, 'questions'), where('isPublished', '==', true), limit(100))).catch(() => null),
-        getDocs(query(collection(db, 'videoLessons'), where('isPublished', '==', true), limit(60))).catch(() => null),
-        getDocs(query(collection(db, 'mockTests'), where('isPublished', '==', true), limit(40))).catch(() => null),
-        getDocs(query(collection(db, 'courses'), where('isPublished', '==', true), limit(40))).catch(() => null),
-      ]);
+      // Paginated loader for ALL published questions (no 100-doc truncation)
+      const mapQuestionDoc = (d: QueryDocumentSnapshot<DocumentData>): Question | null => {
+        const dt = d.data();
+        if (!dt.questionEn || !Array.isArray(dt.optionsEn)) return null;
+        const srcType = dt.sourceType === 'AI_GENERATED' ? 'AI_GENERATED' : 'PYQ';
+        const verifiedFlag = srcType === 'AI_GENERATED' ? false : Boolean(dt.isVerified ?? true);
+        const derivedStatus: AnswerVerificationStatus =
+          dt.answerStatus === 'official' ||
+          dt.answerStatus === 'unofficial' ||
+          dt.answerStatus === 'needs_verification'
+            ? srcType === 'AI_GENERATED'
+              ? 'needs_verification'
+              : dt.answerStatus
+            : srcType === 'AI_GENERATED'
+            ? 'needs_verification'
+            : verifiedFlag
+            ? 'official'
+            : 'unofficial';
+        return {
+          id: String(dt.id || d.id),
+          questionNumber: dt.questionNumber !== undefined ? Number(dt.questionNumber) : undefined,
+          subject: (dt.subject as SubjectId) || 'quant',
+          topic: String(dt.topic || 'General'),
+          year: Number(dt.year || 2024),
+          examDate: dt.examDate ? String(dt.examDate) : undefined,
+          shift: String(dt.shift || 'Tier 1'),
+          tier: dt.tier === 'Tier 2' ? 'Tier 2' : 'Tier 1',
+          difficulty: (dt.difficulty as Question['difficulty']) || 'Medium',
+          sourceType: srcType,
+          sourceLabel: String(dt.sourceLabel || 'Firestore Question Bank'),
+          answerStatus: derivedStatus,
+          isVerified: verifiedFlag,
+          isPublished: dt.isPublished !== false,
+          sourceUrls: Array.isArray(dt.sourceUrls) ? dt.sourceUrls : undefined,
+          questionEn: String(dt.questionEn),
+          questionHi: dt.questionHi ? String(dt.questionHi) : undefined,
+          optionsEn: dt.optionsEn.slice(0, 4) as [string, string, string, string],
+          correctIndex: Number(dt.correctIndex || 0),
+          explanations: dt.explanations || {
+            en: 'Verified answer.',
+            ml: 'ഉത്തരം പരിശോധിക്കുക.',
+            hi: 'सही उत्तर की व्याख्या।',
+            ta: 'சரியான விடை விளக்கம்.',
+          },
+          stepByStep: Array.isArray(dt.stepByStep) ? dt.stepByStep.map(String) : undefined,
+          shortcutMethod: dt.shortcutMethod ? String(dt.shortcutMethod) : undefined,
+        };
+      };
 
-      if (qSnap) {
-        const qs: Question[] = [];
-        qSnap.forEach((d) => {
-          const dt = d.data();
-          if (dt.questionEn && Array.isArray(dt.optionsEn)) {
-            qs.push({
-              id: String(dt.id || d.id),
-              subject: (dt.subject as SubjectId) || 'quant',
-              topic: String(dt.topic || 'General'),
-              year: Number(dt.year || 2024),
-              shift: String(dt.shift || 'Tier 1'),
-              tier: dt.tier === 'Tier 2' ? 'Tier 2' : 'Tier 1',
-              difficulty: (dt.difficulty as Question['difficulty']) || 'Medium',
-              sourceType: dt.sourceType === 'AI_GENERATED' ? 'AI_GENERATED' : 'PYQ',
-              sourceLabel: String(dt.sourceLabel || 'Firestore Question Bank'),
-              isVerified: dt.sourceType === 'AI_GENERATED' ? false : Boolean(dt.isVerified ?? true),
-              isPublished: dt.isPublished !== false,
-              sourceUrls: Array.isArray(dt.sourceUrls) ? dt.sourceUrls : undefined,
-              questionEn: String(dt.questionEn),
-              optionsEn: dt.optionsEn.slice(0, 4) as [string, string, string, string],
-              correctIndex: Number(dt.correctIndex || 0),
-              explanations: dt.explanations || {
-                en: 'Verified answer.',
-                ml: 'ഉത്തരം പരിശോധിക്കുക.',
-                hi: 'सही उत्तर की व्याख्या।',
-                ta: 'சரியான விடை விளக்கம்.',
-              },
-            });
-          }
-        });
-        setRemoteQuestions(qs);
-      }
+      const loadAllQuestionsPaginated = async (publishedOnly: boolean): Promise<Question[]> => {
+        const collected: Question[] = [];
+        let cursor: QueryDocumentSnapshot<DocumentData> | null = null;
+        const batchSize = 200;
+        for (let page = 0; page < 50; page++) {
+          const baseCol = collection(db, 'questions');
+          const qRef: Query<DocumentData> = publishedOnly
+            ? cursor
+              ? query(baseCol, where('isPublished', '==', true), startAfter(cursor), limit(batchSize))
+              : query(baseCol, where('isPublished', '==', true), limit(batchSize))
+            : cursor
+            ? query(baseCol, startAfter(cursor), limit(batchSize))
+            : query(baseCol, limit(batchSize));
+          const snap: QuerySnapshot<DocumentData> | null = await getDocs(qRef).catch(() => null);
+          if (!snap || snap.empty) break;
+          snap.forEach((d: QueryDocumentSnapshot<DocumentData>) => {
+            const parsed = mapQuestionDoc(d);
+            if (parsed) collected.push(parsed);
+          });
+          if (snap.docs.length < batchSize) break;
+          cursor = snap.docs[snap.docs.length - 1];
+        }
+        return collected;
+      };
+
+      setLoadingQuestions(true);
+      const [allQs, vSnap, mtSnap, cSnap, oqSnap] = await Promise.all([
+        loadAllQuestionsPaginated(!includeDrafts),
+        getDocs(query(collection(db, 'videoLessons'), where('isPublished', '==', true), limit(100))).catch(() => null),
+        getDocs(query(collection(db, 'mockTests'), where('isPublished', '==', true), limit(60))).catch(() => null),
+        getDocs(query(collection(db, 'courses'), where('isPublished', '==', true), limit(60))).catch(() => null),
+        getDocs(
+          includeDrafts
+            ? query(collection(db, 'oceanQuestMissions'), limit(100))
+            : query(collection(db, 'oceanQuestMissions'), where('isPublished', '==', true), limit(100))
+        ).catch(() => null),
+      ]);
+      setLoadingQuestions(false);
+      setRemoteQuestions(allQs);
 
       if (vSnap) {
         const vs: VideoLesson[] = [];
@@ -518,7 +804,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               playlist: String(dt.playlist || 'Faculty Uploads'),
               durationSec: Number(dt.durationSec || 60),
               lessonOrder: dt.lessonOrder !== undefined ? Number(dt.lessonOrder) : undefined,
-              instructor: String(dt.instructor || 'ExamVerse Faculty'),
+              instructor: String(dt.instructor || 'Examora Faculty'),
               thumbnailUrl: dt.thumbnailUrl ? String(dt.thumbnailUrl) : undefined,
               videoUrl: dt.videoUrl ? String(dt.videoUrl) : undefined,
               isPublished: dt.isPublished !== false,
@@ -578,8 +864,163 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         });
         setRemoteCourses(cs);
       }
+
+      if (oqSnap) {
+        const ms: OceanQuestMission[] = [];
+        oqSnap.forEach((d) => {
+          const dt = d.data();
+          if (dt.title && dt.locationId) {
+            ms.push({
+              missionId: String(dt.missionId || d.id),
+              locationId: String(dt.locationId),
+              locationOrder: Number(dt.locationOrder || 1),
+              title: String(dt.title),
+              description: String(dt.description || ''),
+              mode: (dt.mode as OceanQuestMission['mode']) || 'treasure-hunt',
+              difficulty: (dt.difficulty as OceanQuestMission['difficulty']) || 'beginner',
+              subject: (dt.subject as OceanQuestMission['subject']) || 'mixed',
+              questionCount: Number(dt.questionCount || 5),
+              timeLimitSec: Number(dt.timeLimitSec || 0),
+              minAccuracyPct: Number(dt.minAccuracyPct || 60),
+              hintLimit: Number(dt.hintLimit || 1),
+              xpReward: Number(dt.xpReward || 100),
+              coinReward: Number(dt.coinReward || 50),
+              crystalReward: Number(dt.crystalReward || 5),
+              badgeId: dt.badgeId ? String(dt.badgeId) : undefined,
+              prerequisiteMissionIds: Array.isArray(dt.prerequisiteMissionIds)
+                ? dt.prerequisiteMissionIds.map(String)
+                : [],
+              isBoss: Boolean(dt.isBoss),
+              guardianName: dt.guardianName ? String(dt.guardianName) : undefined,
+              isPublished: dt.isPublished !== false,
+              order: Number(dt.order || 0),
+              updatedAt: dt.updatedAt ? String(dt.updatedAt) : undefined,
+            });
+          }
+        });
+        ms.sort((a, b) => a.order - b.order);
+        setRemoteOceanMissions(ms);
+      }
+
+      const [pqSnap, pcSnap, prSnap, caSnap] = await Promise.all([
+        getDocs(
+          includeDrafts
+            ? query(collection(db, 'predictorQuestions'), limit(150))
+            : query(collection(db, 'predictorQuestions'), where('isPublished', '==', true), limit(150))
+        ).catch(() => null),
+        getDocs(query(collection(db, 'predictorCategories'), limit(100))).catch(() => null),
+        getDocs(query(collection(db, 'predictionReports'), limit(60))).catch(() => null),
+        getDocs(
+          includeDrafts
+            ? query(collection(db, 'currentAffairs'), limit(100))
+            : query(collection(db, 'currentAffairs'), where('isPublished', '==', true), limit(100))
+        ).catch(() => null),
+      ]);
+
+      if (pqSnap) {
+        const pqs: PredictorQuestion[] = [];
+        pqSnap.forEach((d) => {
+          const dt = d.data();
+          if (dt.questionEn && Array.isArray(dt.optionsEn)) {
+            pqs.push({
+              id: String(dt.questionId || d.id),
+              examYear: Number(dt.examYear || 2026),
+              tier: dt.tier === 'Tier 2' ? 'Tier 2' : 'Tier 1',
+              subject: (dt.subject as SubjectId) || 'quant',
+              topic: String(dt.topic || 'General'),
+              difficulty: (dt.difficulty as PredictorQuestion['difficulty']) || 'Medium',
+              questionEn: String(dt.questionEn),
+              optionsEn: dt.optionsEn.slice(0, 4) as [string, string, string, string],
+              correctIndex: Number(dt.correctIndex || 0),
+              explanation: String(dt.explanation || ''),
+              stepByStep: Array.isArray(dt.stepByStep) ? dt.stepByStep.map(String) : [],
+              usefulnessReason: String(dt.usefulnessReason || ''),
+              sourceType: 'AI_GENERATED',
+              isOfficialPyq: false,
+              aiNoticeLabel: AI_EXPECTED_QUESTION_NOTICE,
+              reviewStatus:
+                dt.reviewStatus === 'approved' || dt.reviewStatus === 'rejected'
+                  ? dt.reviewStatus
+                  : 'pending',
+              isPublished: Boolean(dt.isPublished),
+              createdByUid: dt.createdByUid ? String(dt.createdByUid) : undefined,
+              createdAt: String(dt.createdAt || ''),
+              reviewedAt: dt.reviewedAt ? String(dt.reviewedAt) : undefined,
+            });
+          }
+        });
+        setRemotePredictorQuestions(pqs);
+      }
+
+      if (pcSnap) {
+        const pcs: PredictorCategoryOverride[] = [];
+        pcSnap.forEach((d) => {
+          const dt = d.data();
+          if (dt.topic) {
+            pcs.push({
+              id: String(dt.categoryId || d.id),
+              topic: String(dt.topic),
+              subject: (dt.subject as SubjectId) || 'quant',
+              tier: dt.tier === 'Tier 2' ? 'Tier 2' : 'Tier 1',
+              targetYear: Number(dt.targetYear || 2026),
+              priorityOverride: dt.priorityOverride as PredictorCategoryOverride['priorityOverride'],
+              isOutdated: Boolean(dt.isOutdated),
+              outdatedNote: dt.outdatedNote ? String(dt.outdatedNote) : undefined,
+              updatedAt: String(dt.updatedAt || ''),
+            });
+          }
+        });
+        setRemotePredictorCategories(pcs);
+      }
+
+      if (prSnap) {
+        const prs: PredictionAccuracyReport[] = [];
+        prSnap.forEach((d) => {
+          const dt = d.data();
+          if (dt.title) {
+            prs.push({
+              id: String(dt.reportId || d.id),
+              examYear: Number(dt.examYear || 2024),
+              tier: dt.tier === 'Tier 2' ? 'Tier 2' : 'Tier 1',
+              title: String(dt.title),
+              predictedTopics: Array.isArray(dt.predictedTopics) ? dt.predictedTopics.map(String) : [],
+              actualTopics: Array.isArray(dt.actualTopics) ? dt.actualTopics.map(String) : [],
+              matchedTopics: Array.isArray(dt.matchedTopics) ? dt.matchedTopics.map(String) : [],
+              missedTopics: Array.isArray(dt.missedTopics) ? dt.missedTopics.map(String) : [],
+              coveragePct: Number(dt.coveragePct || 0),
+              notes: String(dt.notes || ''),
+              isOutdated: Boolean(dt.isOutdated),
+              createdAt: String(dt.createdAt || ''),
+            });
+          }
+        });
+        setRemotePredictionReports(prs);
+      }
+
+      if (caSnap) {
+        const cas: CurrentAffairsItem[] = [];
+        caSnap.forEach((d) => {
+          const dt = d.data();
+          if (dt.title && dt.sourceUrl) {
+            cas.push({
+              id: String(dt.articleId || d.id),
+              category: (dt.category as CurrentAffairsCategory) || 'National',
+              title: String(dt.title),
+              summary: String(dt.summary || ''),
+              examRelevance: String(dt.examRelevance || ''),
+              publishedDate: String(dt.publishedDate || ''),
+              sourceName: String(dt.sourceName || 'Verified Source'),
+              sourceUrl: String(dt.sourceUrl),
+              targetYear: Number(dt.targetYear || 2026),
+              isPublished: dt.isPublished !== false,
+              createdAt: String(dt.createdAt || ''),
+            });
+          }
+        });
+        setRemoteCurrentAffairs(cas);
+      }
     } catch {
-      // offline or empty
+      setPublicDataError('Having trouble loading the latest study materials. You can keep studying offline or tap Retry.');
     }
   };
 
@@ -599,6 +1040,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         // Server-verified authorization check via Firestore Security Rules (/adminMeta/access)
         const adminAllowed = await verifyServerAdminAccess();
         setIsServerAdmin(adminAllowed);
+        if (adminAllowed) {
+          void loadPublicCollections(true);
+        }
 
         const userDocRef = doc(db, 'users', user.uid);
         const snap = await getDoc(userDocRef);
@@ -663,6 +1107,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const pd = progSnap.data();
           setState((prev) => ({
             ...prev,
+            difficultQuestionIds: Array.isArray(pd.difficultQuestionIds)
+              ? Array.from(new Set([...prev.difficultQuestionIds, ...pd.difficultQuestionIds.map(String)]))
+              : prev.difficultQuestionIds,
+            revisionListIds: Array.isArray(pd.revisionListIds)
+              ? Array.from(new Set([...prev.revisionListIds, ...pd.revisionListIds.map(String)]))
+              : prev.revisionListIds,
+            pyqAttempts:
+              pd.pyqAttempts && typeof pd.pyqAttempts === 'object'
+                ? { ...pd.pyqAttempts, ...prev.pyqAttempts }
+                : prev.pyqAttempts,
             profile: {
               ...prev.profile,
               completedLessons: Array.isArray(pd.completedLessonIds)
@@ -728,6 +1182,70 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             });
           });
           setState((prev) => ({ ...prev, chatHistory: loadedMsgs }));
+        }
+
+        // Load Ocean Quest Progress (non-destructive merge)
+        const oqSnap = await getDoc(doc(db, 'oceanQuestProgress', user.uid)).catch(() => null);
+        if (oqSnap?.exists()) {
+          const od = oqSnap.data();
+          setState((prev) => ({
+            ...prev,
+            oceanQuestProgress: {
+              ...prev.oceanQuestProgress,
+              uid: user.uid,
+              unlockedLocations: Array.from(
+                new Set([
+                  'coral-bay',
+                  ...prev.oceanQuestProgress.unlockedLocations,
+                  ...(Array.isArray(od.unlockedLocations) ? od.unlockedLocations.map(String) : []),
+                ])
+              ),
+              completedMissions: Array.from(
+                new Set([
+                  ...prev.oceanQuestProgress.completedMissions,
+                  ...(Array.isArray(od.completedMissions) ? od.completedMissions.map(String) : []),
+                ])
+              ),
+              missionBestScores: {
+                ...(od.missionBestScores || {}),
+                ...prev.oceanQuestProgress.missionBestScores,
+              },
+              missionStars: {
+                ...(od.missionStars || {}),
+                ...prev.oceanQuestProgress.missionStars,
+              },
+              seenQuestionIds: Array.from(
+                new Set([
+                  ...prev.oceanQuestProgress.seenQuestionIds,
+                  ...(Array.isArray(od.seenQuestionIds) ? od.seenQuestionIds.map(String) : []),
+                ])
+              ).slice(-1500),
+              wrongQuestionIds: Array.from(
+                new Set([
+                  ...prev.oceanQuestProgress.wrongQuestionIds,
+                  ...(Array.isArray(od.wrongQuestionIds) ? od.wrongQuestionIds.map(String) : []),
+                ])
+              ).slice(0, 800),
+              crystals: Math.max(prev.oceanQuestProgress.crystals, Number(od.crystals || 0)),
+              totalQuestXp: Math.max(prev.oceanQuestProgress.totalQuestXp, Number(od.totalQuestXp || 0)),
+              questBadges: Array.from(
+                new Set([
+                  ...prev.oceanQuestProgress.questBadges,
+                  ...(Array.isArray(od.questBadges) ? od.questBadges.map(String) : []),
+                ])
+              ),
+              dailyCompletions: Array.from(
+                new Set([
+                  ...prev.oceanQuestProgress.dailyCompletions,
+                  ...(Array.isArray(od.dailyCompletions) ? od.dailyCompletions.map(String) : []),
+                ])
+              ),
+              totalRuns: Math.max(prev.oceanQuestProgress.totalRuns, Number(od.totalRuns || 0)),
+              totalCorrect: Math.max(prev.oceanQuestProgress.totalCorrect, Number(od.totalCorrect || 0)),
+              totalAttempted: Math.max(prev.oceanQuestProgress.totalAttempted, Number(od.totalAttempted || 0)),
+              updatedAt: String(od.updatedAt || new Date().toISOString()),
+            },
+          }));
         }
       } catch (err) {
         console.warn('Could not fetch user profile state:', err);
@@ -901,6 +1419,69 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   };
 
+  const toggleDifficultQuestion = (questionId: string) => {
+    setState((prev) => {
+      const exists = prev.difficultQuestionIds.includes(questionId);
+      const nextDiff = exists
+        ? prev.difficultQuestionIds.filter((id) => id !== questionId)
+        : [questionId, ...prev.difficultQuestionIds];
+      syncUserProgressToFirestore(prev.profile, { difficultQuestionIds: nextDiff }).catch(() => {});
+      return { ...prev, difficultQuestionIds: nextDiff };
+    });
+  };
+
+  const toggleRevisionQuestion = (questionId: string) => {
+    setState((prev) => {
+      const exists = prev.revisionListIds.includes(questionId);
+      const nextRev = exists
+        ? prev.revisionListIds.filter((id) => id !== questionId)
+        : [questionId, ...prev.revisionListIds];
+      syncUserProgressToFirestore(prev.profile, { revisionListIds: nextRev }).catch(() => {});
+      return { ...prev, revisionListIds: nextRev };
+    });
+  };
+
+  const recordPyqAttempt = (question: Question, selectedIndex: number) => {
+    const isCorrect = selectedIndex === question.correctIndex;
+    const record: PyqAttemptRecord = {
+      questionId: question.id,
+      selectedIndex,
+      isCorrect,
+      attemptedAt: new Date().toISOString(),
+      subject: question.subject,
+    };
+    setState((prev) => {
+      const alreadyAttempted = Boolean(prev.pyqAttempts[question.id]);
+      const nextAttempts = { ...prev.pyqAttempts, [question.id]: record };
+      const xpGain = alreadyAttempted ? 2 : isCorrect ? 15 : 3;
+      const coinGain = !alreadyAttempted && isCorrect ? 5 : 0;
+      const curSub = prev.profile.subjectStats[question.subject] || { attempted: 0, correct: 0 };
+      const updatedProfile: UserProfile = alreadyAttempted
+        ? prev.profile
+        : {
+            ...prev.profile,
+            xp: prev.profile.xp + xpGain,
+            coins: prev.profile.coins + coinGain,
+            questionsAttempted: prev.profile.questionsAttempted + 1,
+            questionsCorrect: prev.profile.questionsCorrect + (isCorrect ? 1 : 0),
+            studyMinutesToday: prev.profile.studyMinutesToday + 2,
+            subjectStats: {
+              ...prev.profile.subjectStats,
+              [question.subject]: {
+                attempted: curSub.attempted + 1,
+                correct: curSub.correct + (isCorrect ? 1 : 0),
+              },
+            },
+          };
+      if (!alreadyAttempted) {
+        updatedProfile.earnedBadges = evaluateBadges(updatedProfile);
+        syncUserToFirestore(updatedProfile);
+      }
+      syncUserProgressToFirestore(updatedProfile, { pyqAttempts: nextAttempts }).catch(() => {});
+      return { ...prev, profile: updatedProfile, pyqAttempts: nextAttempts };
+    });
+  };
+
   const recordGameSession = async (
     gameMode: GameModeId,
     gameTitle: string,
@@ -1055,6 +1636,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         xp: prev.profile.xp + (newlyCompleted ? 40 : 0),
         coins: prev.profile.coins + (newlyCompleted ? 15 : 0),
         completedLessons,
+        lastLessonId: lessonId,
         videoProgress: {
           ...prev.profile.videoProgress,
           [lessonId]: {
@@ -1170,8 +1752,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const addAdminQuestion = async (q: Question, persistToFirestore = true) => {
+    const safeAnswerStatus: AnswerVerificationStatus =
+      q.sourceType === 'AI_GENERATED'
+        ? 'needs_verification'
+        : q.answerStatus || (q.isVerified === false ? 'unofficial' : 'official');
     const safeQuestion: Question = {
       ...q,
+      answerStatus: safeAnswerStatus,
       isVerified: q.sourceType === 'AI_GENERATED' ? false : Boolean(q.isVerified ?? true),
       isPublished: q.isPublished !== false,
     };
@@ -1181,20 +1768,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       try {
         await setDoc(doc(db, 'questions', safeQuestion.id), {
           id: safeQuestion.id,
+          ...(safeQuestion.questionNumber !== undefined
+            ? { questionNumber: safeQuestion.questionNumber }
+            : {}),
           subject: safeQuestion.subject,
           topic: safeQuestion.topic,
           year: safeQuestion.year,
+          ...(safeQuestion.examDate ? { examDate: safeQuestion.examDate.slice(0, 32) } : {}),
           shift: safeQuestion.shift,
           tier: safeQuestion.tier,
           difficulty: safeQuestion.difficulty,
           sourceType: safeQuestion.sourceType,
           sourceLabel: safeQuestion.sourceLabel.slice(0, 160),
+          answerStatus: safeAnswerStatus,
           isVerified: safeQuestion.isVerified,
           isPublished: safeQuestion.isPublished,
           questionEn: safeQuestion.questionEn.slice(0, 1200),
+          ...(safeQuestion.questionHi ? { questionHi: safeQuestion.questionHi.slice(0, 1200) } : {}),
           optionsEn: safeQuestion.optionsEn,
           correctIndex: safeQuestion.correctIndex,
           explanations: safeQuestion.explanations,
+          ...(safeQuestion.stepByStep && safeQuestion.stepByStep.length > 0
+            ? { stepByStep: safeQuestion.stepByStep.slice(0, 20) }
+            : {}),
+          ...(safeQuestion.shortcutMethod
+            ? { shortcutMethod: safeQuestion.shortcutMethod.slice(0, 600) }
+            : {}),
           ...(safeQuestion.sourceUrls ? { sourceUrls: safeQuestion.sourceUrls } : {}),
         });
       } catch (err) {
@@ -1469,24 +2068,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
 
     QUESTIONS_BANK.forEach((q) => {
+      const safeStatus: AnswerVerificationStatus =
+        q.sourceType === 'AI_GENERATED'
+          ? 'needs_verification'
+          : q.answerStatus || 'official';
       batch.set(
         doc(db, 'questions', q.id),
         {
           id: q.id,
+          ...(q.questionNumber !== undefined ? { questionNumber: q.questionNumber } : {}),
           subject: q.subject,
           topic: q.topic,
           year: q.year,
+          ...(q.examDate ? { examDate: q.examDate } : {}),
           shift: q.shift,
           tier: q.tier,
           difficulty: q.difficulty,
           sourceType: q.sourceType,
           sourceLabel: q.sourceLabel,
+          answerStatus: safeStatus,
           isVerified: q.sourceType === 'AI_GENERATED' ? false : Boolean(q.isVerified ?? true),
           isPublished: true,
           questionEn: q.questionEn,
+          ...(q.questionHi ? { questionHi: q.questionHi } : {}),
           optionsEn: q.optionsEn,
           correctIndex: q.correctIndex,
           explanations: q.explanations,
+          ...(q.stepByStep ? { stepByStep: q.stepByStep } : {}),
+          ...(q.shortcutMethod ? { shortcutMethod: q.shortcutMethod } : {}),
           ...(q.sourceUrls ? { sourceUrls: q.sourceUrls } : {}),
         },
         { merge: true }
@@ -1516,8 +2125,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       count++;
     });
 
+    OCEAN_MISSIONS_SEED.forEach((m) => {
+      batch.set(
+        doc(db, 'oceanQuestMissions', m.missionId),
+        {
+          ...m,
+          updatedAt: new Date().toISOString(),
+        },
+        { merge: true }
+      );
+      count++;
+    });
+
     await batch.commit();
-    await loadPublicCollections();
+    await loadPublicCollections(true);
     showToast(`Seeded ${count} Firestore Docs`, 50, 25);
     return { seededDocs: count };
   };
@@ -1536,15 +2157,348 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  const oceanQuestMissions = useMemo(() => {
+    const map = new Map<string, OceanQuestMission>();
+    [...OCEAN_MISSIONS_SEED, ...remoteOceanMissions, ...state.customOceanMissions].forEach((m) => {
+      map.set(m.missionId, m);
+    });
+    return Array.from(map.values()).sort((a, b) => a.order - b.order);
+  }, [remoteOceanMissions, state.customOceanMissions]);
+
+  const evaluateOceanQuestRun = async ({
+    mission,
+    correctCount,
+    totalQuestions,
+    timeRemainingSec,
+    hintsUsed,
+    comboMax,
+    attemptedQuestionIds,
+    wrongQuestionIds,
+    subjectBreakdown,
+  }: {
+    mission: OceanQuestMission;
+    correctCount: number;
+    totalQuestions: number;
+    timeRemainingSec: number;
+    hintsUsed: number;
+    comboMax: number;
+    attemptedQuestionIds: string[];
+    wrongQuestionIds: string[];
+    subjectBreakdown: Partial<Record<SubjectId, { attempted: number; correct: number }>>;
+  }): Promise<OceanQuestEvalResponse> => {
+    const uid = auth.currentUser?.uid || state.profile.uid || 'guest';
+    const todayKey = new Date().toISOString().slice(0, 10);
+
+    let evalResult: OceanQuestEvalResponse;
+    try {
+      const resp = await fetch('/api/ocean-quest/evaluate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          uid,
+          missionId: mission.missionId,
+          correctCount,
+          totalQuestions,
+          timeRemainingSec,
+          hintsUsed,
+          comboMax,
+          missionConfig: {
+            mode: mission.mode,
+            minAccuracyPct: mission.minAccuracyPct,
+            xpReward: mission.xpReward,
+            coinReward: mission.coinReward,
+            crystalReward: mission.crystalReward,
+            badgeId: mission.badgeId,
+            timeLimitSec: mission.timeLimitSec,
+          },
+        }),
+      });
+      if (!resp.ok) throw new Error('Eval endpoint failed');
+      evalResult = (await resp.json()) as OceanQuestEvalResponse;
+    } catch {
+      const accuracy = Math.round((correctCount / Math.max(1, totalQuestions)) * 100);
+      const passed = accuracy >= mission.minAccuracyPct;
+      const stars = !passed ? 0 : accuracy >= 90 ? 3 : accuracy >= 75 ? 2 : 1;
+      const alreadyCompleted = state.oceanQuestProgress.completedMissions.includes(mission.missionId);
+      const isDaily = mission.mode === 'daily-challenge';
+      const dailyDone = state.oceanQuestProgress.dailyCompletions.includes(todayKey);
+      const grantBonus = passed && (isDaily ? !dailyDone : !alreadyCompleted);
+      evalResult = {
+        missionId: mission.missionId,
+        passed,
+        accuracy,
+        stars,
+        score: correctCount * 100 + comboMax * 25,
+        xpEarned: grantBonus ? mission.xpReward : passed ? Math.min(60, correctCount * 6) : Math.min(25, correctCount * 4),
+        coinsEarned: grantBonus ? mission.coinReward : passed ? Math.min(25, correctCount * 3) : Math.min(10, correctCount * 2),
+        crystalsEarned: grantBonus ? mission.crystalReward : 0,
+        isFirstClearClaim: grantBonus && !isDaily,
+        alreadyClaimedDaily: isDaily && dailyDone,
+        unlockedBadgeId: grantBonus ? mission.badgeId : undefined,
+        claimType: isDaily ? 'daily-challenge' : 'first-clear',
+      };
+    }
+
+    // Double-check immutable Firestore claim doc when signed in so client state never awards duplicate first-clear/daily bonus
+    if (auth.currentUser && auth.currentUser.emailVerified && evalResult.passed && evalResult.claimId) {
+      const claimRef = doc(db, 'oceanQuestClaims', evalResult.claimId);
+      try {
+        const existingClaimSnap = await getDoc(claimRef);
+        if (existingClaimSnap.exists()) {
+          evalResult = {
+            ...evalResult,
+            xpEarned: Math.min(60, correctCount * 6),
+            coinsEarned: Math.min(25, correctCount * 3),
+            crystalsEarned: 0,
+            isFirstClearClaim: false,
+            alreadyClaimedDaily: evalResult.claimType === 'daily-challenge',
+          };
+        } else {
+          await setDoc(claimRef, {
+            claimId: evalResult.claimId,
+            userId: auth.currentUser.uid,
+            missionId: mission.missionId,
+            claimType: evalResult.claimType || 'first-clear',
+            xpEarned: Math.min(600, evalResult.xpEarned),
+            coinsEarned: Math.min(300, evalResult.coinsEarned),
+            crystalsEarned: Math.min(100, evalResult.crystalsEarned),
+            accuracy: evalResult.accuracy,
+            claimedAt: new Date().toISOString(),
+          });
+        }
+      } catch (err) {
+        console.warn('Claim verification warning:', err);
+      }
+    }
+
+    const nowIso = new Date().toISOString();
+    let updatedOceanProg!: OceanQuestProgress;
+    let updatedProfileSnapshot!: UserProfile;
+    let updatedRevisionIds: string[] = [];
+
+    setState((prev) => {
+      const prevOq = prev.oceanQuestProgress;
+      const completedMissions = evalResult.passed
+        ? Array.from(new Set([...prevOq.completedMissions, mission.missionId]))
+        : prevOq.completedMissions;
+
+      const bestScores = { ...prevOq.missionBestScores };
+      bestScores[mission.missionId] = Math.max(bestScores[mission.missionId] || 0, evalResult.score);
+
+      const starsMap = { ...prevOq.missionStars };
+      starsMap[mission.missionId] = Math.max(starsMap[mission.missionId] || 0, evalResult.stars);
+
+      const seenQuestionIds = Array.from(
+        new Set([...prevOq.seenQuestionIds, ...attemptedQuestionIds])
+      ).slice(-1500);
+
+      // Remove mastered questions from wrongQuestionIds, add missed ones
+      const wrongSet = new Set(prevOq.wrongQuestionIds);
+      attemptedQuestionIds.forEach((qid) => {
+        if (!wrongQuestionIds.includes(qid)) wrongSet.delete(qid);
+      });
+      wrongQuestionIds.forEach((qid) => wrongSet.add(qid));
+      const nextWrongIds = Array.from(wrongSet).slice(0, 800);
+
+      updatedRevisionIds = Array.from(new Set([...prev.revisionListIds, ...wrongQuestionIds])).slice(0, 1000);
+
+      const questBadges = evalResult.unlockedBadgeId
+        ? Array.from(new Set([...prevOq.questBadges, evalResult.unlockedBadgeId]))
+        : prevOq.questBadges;
+
+      const dailyCompletions =
+        evalResult.passed && mission.mode === 'daily-challenge'
+          ? Array.from(new Set([...prevOq.dailyCompletions, todayKey]))
+          : prevOq.dailyCompletions;
+
+      const draftProgress: OceanQuestProgress = {
+        ...prevOq,
+        uid: prev.profile.uid,
+        completedMissions,
+        missionBestScores: bestScores,
+        missionStars: starsMap,
+        seenQuestionIds,
+        wrongQuestionIds: nextWrongIds,
+        crystals: prevOq.crystals + evalResult.crystalsEarned,
+        totalQuestXp: prevOq.totalQuestXp + evalResult.xpEarned,
+        questBadges,
+        dailyCompletions,
+        totalRuns: prevOq.totalRuns + 1,
+        totalCorrect: prevOq.totalCorrect + correctCount,
+        totalAttempted: prevOq.totalAttempted + totalQuestions,
+        updatedAt: nowIso,
+      };
+
+      // Recompute unlocked locations deterministically from completed missions
+      const unlockedLocs = new Set(draftProgress.unlockedLocations);
+      OCEAN_LOCATIONS.forEach((loc) => {
+        if (getLocationUnlockStatus(loc.locationId, draftProgress, oceanQuestMissions).unlocked) {
+          unlockedLocs.add(loc.locationId);
+        }
+      });
+      draftProgress.unlockedLocations = Array.from(unlockedLocs);
+      updatedOceanProg = draftProgress;
+
+      const nextSubjectStats = { ...prev.profile.subjectStats };
+      (Object.keys(subjectBreakdown) as SubjectId[]).forEach((sub) => {
+        const inc = subjectBreakdown[sub];
+        if (inc && inc.attempted > 0) {
+          const cur = nextSubjectStats[sub] || { attempted: 0, correct: 0 };
+          nextSubjectStats[sub] = {
+            attempted: cur.attempted + inc.attempted,
+            correct: cur.correct + inc.correct,
+          };
+        }
+      });
+
+      const mergedBadges = new Set([...prev.profile.earnedBadges, ...questBadges]);
+      const nextProfile: UserProfile = {
+        ...prev.profile,
+        xp: prev.profile.xp + evalResult.xpEarned,
+        coins: prev.profile.coins + evalResult.coinsEarned,
+        questionsAttempted: prev.profile.questionsAttempted + totalQuestions,
+        questionsCorrect: prev.profile.questionsCorrect + correctCount,
+        studyMinutesToday: prev.profile.studyMinutesToday + Math.max(3, Math.round(totalQuestions * 0.8)),
+        subjectStats: nextSubjectStats,
+        dailyChallengeDoneDate:
+          evalResult.passed && mission.mode === 'daily-challenge'
+            ? todayKey
+            : prev.profile.dailyChallengeDoneDate,
+        earnedBadges: Array.from(mergedBadges),
+      };
+      nextProfile.earnedBadges = evaluateBadges(nextProfile);
+      updatedProfileSnapshot = nextProfile;
+
+      const session: GameSession = {
+        id: `oq-${Date.now()}`,
+        gameMode: 'ocean-quest',
+        gameTitle: `Ocean Quest: ${mission.title}`,
+        score: evalResult.score,
+        xpEarned: evalResult.xpEarned,
+        coinsEarned: evalResult.coinsEarned,
+        accuracy: evalResult.accuracy,
+        comboMax,
+        createdAt: nowIso,
+      };
+
+      return {
+        ...prev,
+        profile: nextProfile,
+        oceanQuestProgress: draftProgress,
+        revisionListIds: updatedRevisionIds,
+        gameSessions: [session, ...prev.gameSessions].slice(0, 40),
+      };
+    });
+
+    showToast(
+      evalResult.passed ? `${mission.title} Cleared!` : `${mission.title} · Practice Logged`,
+      evalResult.xpEarned,
+      evalResult.coinsEarned
+    );
+
+    if (auth.currentUser && auth.currentUser.emailVerified) {
+      const fUid = auth.currentUser.uid;
+      await syncUserToFirestore(updatedProfileSnapshot);
+      await syncUserProgressToFirestore(updatedProfileSnapshot, {
+        revisionListIds: updatedRevisionIds,
+      });
+      await setDoc(doc(db, 'oceanQuestProgress', fUid), {
+        ...updatedOceanProg,
+        uid: fUid,
+      }).catch((err) => handleFirestoreError(err, OperationType.WRITE, `oceanQuestProgress/${fUid}`));
+
+      const gsId = `oq-${Date.now()}`;
+      await setDoc(doc(db, 'gameSessions', gsId), {
+        userId: fUid,
+        gameMode: 'ocean-quest',
+        score: Math.round(evalResult.score),
+        xpEarned: Math.round(evalResult.xpEarned),
+        coinsEarned: Math.round(evalResult.coinsEarned),
+        accuracy: Math.round(evalResult.accuracy),
+        createdAt: nowIso,
+      }).catch(() => {});
+
+      await setDoc(doc(db, 'gameScores', gsId), {
+        userId: fUid,
+        gameId: 'ocean-quest',
+        gameTitle: `Ocean Quest: ${mission.title}`.slice(0, 120),
+        score: Math.round(evalResult.score),
+        xpEarned: Math.round(evalResult.xpEarned),
+        coinsEarned: Math.round(evalResult.coinsEarned),
+        accuracy: Math.round(evalResult.accuracy),
+        completedAt: nowIso,
+      }).catch(() => {});
+    }
+
+    return evalResult;
+  };
+
+  const upsertOceanQuestMission = async (mission: OceanQuestMission) => {
+    const clean: OceanQuestMission = {
+      ...mission,
+      updatedAt: new Date().toISOString(),
+    };
+    setState((prev) => {
+      const filtered = prev.customOceanMissions.filter((m) => m.missionId !== clean.missionId);
+      return { ...prev, customOceanMissions: [clean, ...filtered] };
+    });
+    setRemoteOceanMissions((prev) => {
+      const filtered = prev.filter((m) => m.missionId !== clean.missionId);
+      return [...filtered, clean].sort((a, b) => a.order - b.order);
+    });
+    if (isVerifiedCloudAdmin) {
+      try {
+        await setDoc(doc(db, 'oceanQuestMissions', clean.missionId), clean, { merge: true });
+      } catch (err) {
+        handleFirestoreError(err, OperationType.WRITE, `oceanQuestMissions/${clean.missionId}`);
+      }
+    }
+  };
+
+  const toggleOceanQuestMissionPublished = async (missionId: string, isPublished: boolean) => {
+    setState((prev) => ({
+      ...prev,
+      customOceanMissions: prev.customOceanMissions.map((m) =>
+        m.missionId === missionId ? { ...m, isPublished } : m
+      ),
+    }));
+    setRemoteOceanMissions((prev) =>
+      prev.map((m) => (m.missionId === missionId ? { ...m, isPublished } : m))
+    );
+    if (isVerifiedCloudAdmin) {
+      try {
+        await setDoc(doc(db, 'oceanQuestMissions', missionId), { isPublished, updatedAt: new Date().toISOString() }, { merge: true });
+      } catch (err) {
+        handleFirestoreError(err, OperationType.UPDATE, `oceanQuestMissions/${missionId}`);
+      }
+    }
+  };
+
+  const deleteOceanQuestMission = async (missionId: string) => {
+    setState((prev) => ({
+      ...prev,
+      customOceanMissions: prev.customOceanMissions.filter((m) => m.missionId !== missionId),
+    }));
+    setRemoteOceanMissions((prev) => prev.filter((m) => m.missionId !== missionId));
+    if (isVerifiedCloudAdmin) {
+      try {
+        await deleteDoc(doc(db, 'oceanQuestMissions', missionId));
+      } catch (err) {
+        handleFirestoreError(err, OperationType.DELETE, `oceanQuestMissions/${missionId}`);
+      }
+    }
+  };
+
   const fetchAdminAnalytics = async () => {
     if (!isVerifiedCloudAdmin) {
-      return { students: [], attempts: [], gameSessions: [] };
+      return { students: [], attempts: [], gameSessions: [], oceanProgress: [] };
     }
     try {
-      const [usersSnap, attemptsSnap, gamesSnap] = await Promise.all([
+      const [usersSnap, attemptsSnap, gamesSnap, oqSnap] = await Promise.all([
         getDocs(query(collection(db, 'users'), limit(200))),
         getDocs(query(collection(db, 'testAttempts'), limit(250))),
         getDocs(query(collection(db, 'gameSessions'), limit(200))).catch(() => null),
+        getDocs(query(collection(db, 'oceanQuestProgress'), limit(200))).catch(() => null),
       ]);
       const students: AdminStudentSummary[] = [];
       usersSnap.forEach((d) => {
@@ -1619,9 +2573,320 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         });
       });
 
-      return { students, attempts, gameSessions };
+      const oceanProgress: OceanQuestProgress[] = [];
+      oqSnap?.forEach((d) => {
+        const od = d.data();
+        oceanProgress.push({
+          uid: String(od.uid || d.id),
+          unlockedLocations: Array.isArray(od.unlockedLocations) ? od.unlockedLocations.map(String) : ['coral-bay'],
+          completedMissions: Array.isArray(od.completedMissions) ? od.completedMissions.map(String) : [],
+          missionBestScores: od.missionBestScores || {},
+          missionStars: od.missionStars || {},
+          seenQuestionIds: Array.isArray(od.seenQuestionIds) ? od.seenQuestionIds.map(String) : [],
+          wrongQuestionIds: Array.isArray(od.wrongQuestionIds) ? od.wrongQuestionIds.map(String) : [],
+          crystals: Number(od.crystals || 0),
+          totalQuestXp: Number(od.totalQuestXp || 0),
+          questBadges: Array.isArray(od.questBadges) ? od.questBadges.map(String) : [],
+          dailyCompletions: Array.isArray(od.dailyCompletions) ? od.dailyCompletions.map(String) : [],
+          totalRuns: Number(od.totalRuns || 0),
+          totalCorrect: Number(od.totalCorrect || 0),
+          totalAttempted: Number(od.totalAttempted || 0),
+          updatedAt: String(od.updatedAt || ''),
+        });
+      });
+
+      return { students, attempts, gameSessions, oceanProgress };
     } catch (err) {
       handleFirestoreError(err, OperationType.LIST, 'users');
+    }
+  };
+
+  const predictorQuestions = useMemo(() => {
+    const map = new Map<string, PredictorQuestion>();
+    [...remotePredictorQuestions, ...(state.customPredictorQuestions || [])].forEach((pq) => {
+      map.set(pq.id, pq);
+    });
+    return Array.from(map.values()).sort((a, b) =>
+      (b.createdAt || '').localeCompare(a.createdAt || '')
+    );
+  }, [remotePredictorQuestions, state.customPredictorQuestions]);
+
+  const predictorCategories = useMemo(() => {
+    const map = new Map<string, PredictorCategoryOverride>();
+    [...remotePredictorCategories, ...(state.customPredictorCategories || [])].forEach((pc) => {
+      map.set(pc.id, pc);
+    });
+    return Array.from(map.values());
+  }, [remotePredictorCategories, state.customPredictorCategories]);
+
+  const predictionReports = useMemo(() => {
+    const map = new Map<string, PredictionAccuracyReport>();
+    [
+      ...HISTORICAL_ACCURACY_BENCHMARK_SEED,
+      ...remotePredictionReports,
+      ...(state.customPredictionReports || []),
+    ].forEach((pr) => {
+      map.set(pr.id, pr);
+    });
+    return Array.from(map.values()).sort((a, b) => b.examYear - a.examYear);
+  }, [remotePredictionReports, state.customPredictionReports]);
+
+  const currentAffairs = useMemo(() => {
+    const map = new Map<string, CurrentAffairsItem>();
+    [
+      ...CURATED_CURRENT_AFFAIRS_SEED,
+      ...remoteCurrentAffairs,
+      ...(state.customCurrentAffairs || []),
+    ].forEach((ca) => {
+      map.set(ca.id, ca);
+    });
+    return Array.from(map.values()).sort((a, b) =>
+      (b.publishedDate || '').localeCompare(a.publishedDate || '')
+    );
+  }, [remoteCurrentAffairs, state.customCurrentAffairs]);
+
+  const savePredictorQuestion = async (q: PredictorQuestion) => {
+    const safeQuestion: PredictorQuestion = {
+      ...q,
+      sourceType: 'AI_GENERATED',
+      isOfficialPyq: false,
+      aiNoticeLabel: AI_EXPECTED_QUESTION_NOTICE,
+      reviewStatus: isVerifiedCloudAdmin ? q.reviewStatus : 'pending',
+      isPublished: isVerifiedCloudAdmin ? q.isPublished : false,
+      createdByUid: auth.currentUser?.uid || state.profile.uid,
+      createdAt: q.createdAt || new Date().toISOString(),
+    };
+    setState((prev) => ({
+      ...prev,
+      customPredictorQuestions: [
+        safeQuestion,
+        ...(prev.customPredictorQuestions || []).filter((item) => item.id !== safeQuestion.id),
+      ].slice(0, 120),
+    }));
+    if (auth.currentUser && auth.currentUser.emailVerified) {
+      try {
+        await setDoc(doc(db, 'predictorQuestions', safeQuestion.id), {
+          questionId: safeQuestion.id,
+          examYear: safeQuestion.examYear,
+          tier: safeQuestion.tier,
+          subject: safeQuestion.subject,
+          topic: safeQuestion.topic.slice(0, 100),
+          difficulty: safeQuestion.difficulty,
+          questionEn: safeQuestion.questionEn.slice(0, 1400),
+          optionsEn: safeQuestion.optionsEn,
+          correctIndex: safeQuestion.correctIndex,
+          explanation: safeQuestion.explanation.slice(0, 2000),
+          stepByStep: safeQuestion.stepByStep.slice(0, 10),
+          usefulnessReason: safeQuestion.usefulnessReason.slice(0, 500),
+          sourceType: 'AI_GENERATED',
+          isOfficialPyq: false,
+          aiNoticeLabel: AI_EXPECTED_QUESTION_NOTICE,
+          reviewStatus: safeQuestion.reviewStatus,
+          isPublished: safeQuestion.isPublished,
+          createdByUid: auth.currentUser.uid,
+          createdAt: safeQuestion.createdAt,
+        });
+      } catch (err) {
+        console.warn('Could not persist predictor question draft:', err);
+      }
+    }
+  };
+
+  const reviewPredictorQuestion = async (
+    id: string,
+    status: PredictorReviewStatus,
+    patch?: Partial<PredictorQuestion>
+  ) => {
+    const nowIso = new Date().toISOString();
+    const isPublished = status === 'approved';
+    const applyPatch = (item: PredictorQuestion): PredictorQuestion =>
+      item.id === id
+        ? {
+            ...item,
+            ...(patch || {}),
+            reviewStatus: status,
+            isPublished,
+            isOfficialPyq: false,
+            sourceType: 'AI_GENERATED',
+            aiNoticeLabel: AI_EXPECTED_QUESTION_NOTICE,
+            reviewedAt: nowIso,
+          }
+        : item;
+
+    setState((prev) => ({
+      ...prev,
+      customPredictorQuestions: (prev.customPredictorQuestions || []).map(applyPatch),
+    }));
+    setRemotePredictorQuestions((prev) => prev.map(applyPatch));
+
+    if (isVerifiedCloudAdmin) {
+      try {
+        await updateDoc(doc(db, 'predictorQuestions', id), {
+          ...(patch || {}),
+          reviewStatus: status,
+          isPublished,
+          isOfficialPyq: false,
+          sourceType: 'AI_GENERATED',
+          aiNoticeLabel: AI_EXPECTED_QUESTION_NOTICE,
+          reviewedAt: nowIso,
+        });
+      } catch (err) {
+        handleFirestoreError(err, OperationType.UPDATE, `predictorQuestions/${id}`);
+      }
+    }
+  };
+
+  const deletePredictorQuestion = async (id: string) => {
+    setState((prev) => ({
+      ...prev,
+      customPredictorQuestions: (prev.customPredictorQuestions || []).filter((p) => p.id !== id),
+    }));
+    setRemotePredictorQuestions((prev) => prev.filter((p) => p.id !== id));
+    if (isVerifiedCloudAdmin) {
+      try {
+        await deleteDoc(doc(db, 'predictorQuestions', id));
+      } catch (err) {
+        handleFirestoreError(err, OperationType.DELETE, `predictorQuestions/${id}`);
+      }
+    }
+  };
+
+  const upsertPredictorCategory = async (cat: PredictorCategoryOverride) => {
+    const clean: PredictorCategoryOverride = {
+      ...cat,
+      updatedAt: new Date().toISOString(),
+    };
+    setState((prev) => ({
+      ...prev,
+      customPredictorCategories: [
+        clean,
+        ...(prev.customPredictorCategories || []).filter((c) => c.id !== clean.id),
+      ],
+    }));
+    setRemotePredictorCategories((prev) => [
+      clean,
+      ...prev.filter((c) => c.id !== clean.id),
+    ]);
+    if (isVerifiedCloudAdmin) {
+      try {
+        await setDoc(
+          doc(db, 'predictorCategories', clean.id),
+          {
+            categoryId: clean.id,
+            topic: clean.topic.slice(0, 100),
+            subject: clean.subject,
+            tier: clean.tier,
+            targetYear: clean.targetYear,
+            ...(clean.priorityOverride ? { priorityOverride: clean.priorityOverride } : {}),
+            isOutdated: Boolean(clean.isOutdated),
+            ...(clean.outdatedNote ? { outdatedNote: clean.outdatedNote.slice(0, 300) } : {}),
+            updatedAt: clean.updatedAt,
+          },
+          { merge: true }
+        );
+      } catch (err) {
+        handleFirestoreError(err, OperationType.WRITE, `predictorCategories/${clean.id}`);
+      }
+    }
+  };
+
+  const savePredictionReport = async (report: PredictionAccuracyReport) => {
+    setState((prev) => ({
+      ...prev,
+      customPredictionReports: [
+        report,
+        ...(prev.customPredictionReports || []).filter((r) => r.id !== report.id),
+      ],
+    }));
+    setRemotePredictionReports((prev) => [report, ...prev.filter((r) => r.id !== report.id)]);
+    if (isVerifiedCloudAdmin) {
+      try {
+        await setDoc(doc(db, 'predictionReports', report.id), {
+          reportId: report.id,
+          examYear: report.examYear,
+          tier: report.tier,
+          title: report.title.slice(0, 180),
+          predictedTopics: report.predictedTopics.slice(0, 40),
+          actualTopics: report.actualTopics.slice(0, 40),
+          matchedTopics: report.matchedTopics.slice(0, 40),
+          missedTopics: report.missedTopics.slice(0, 40),
+          coveragePct: report.coveragePct,
+          notes: report.notes.slice(0, 1000),
+          isOutdated: Boolean(report.isOutdated),
+          createdAt: report.createdAt,
+        });
+      } catch (err) {
+        handleFirestoreError(err, OperationType.WRITE, `predictionReports/${report.id}`);
+      }
+    }
+  };
+
+  const togglePredictionReportOutdated = async (id: string, isOutdated: boolean) => {
+    setState((prev) => ({
+      ...prev,
+      customPredictionReports: (prev.customPredictionReports || []).map((r) =>
+        r.id === id ? { ...r, isOutdated } : r
+      ),
+    }));
+    setRemotePredictionReports((prev) =>
+      prev.map((r) => (r.id === id ? { ...r, isOutdated } : r))
+    );
+    if (isVerifiedCloudAdmin) {
+      try {
+        await updateDoc(doc(db, 'predictionReports', id), { isOutdated });
+      } catch (err) {
+        handleFirestoreError(err, OperationType.UPDATE, `predictionReports/${id}`);
+      }
+    }
+  };
+
+  const upsertCurrentAffairsItem = async (item: CurrentAffairsItem) => {
+    const clean: CurrentAffairsItem = {
+      ...item,
+      isPublished: item.isPublished !== false,
+      createdAt: item.createdAt || new Date().toISOString(),
+    };
+    setState((prev) => ({
+      ...prev,
+      customCurrentAffairs: [
+        clean,
+        ...(prev.customCurrentAffairs || []).filter((a) => a.id !== clean.id),
+      ],
+    }));
+    setRemoteCurrentAffairs((prev) => [clean, ...prev.filter((a) => a.id !== clean.id)]);
+    if (isVerifiedCloudAdmin) {
+      try {
+        await setDoc(doc(db, 'currentAffairs', clean.id), {
+          articleId: clean.id,
+          category: clean.category,
+          title: clean.title.slice(0, 200),
+          summary: clean.summary.slice(0, 1500),
+          examRelevance: clean.examRelevance.slice(0, 500),
+          publishedDate: clean.publishedDate.slice(0, 32),
+          sourceName: clean.sourceName.slice(0, 120),
+          sourceUrl: clean.sourceUrl.slice(0, 500),
+          targetYear: clean.targetYear,
+          isPublished: clean.isPublished,
+          createdAt: clean.createdAt,
+        });
+      } catch (err) {
+        handleFirestoreError(err, OperationType.WRITE, `currentAffairs/${clean.id}`);
+      }
+    }
+  };
+
+  const deleteCurrentAffairsItem = async (id: string) => {
+    setState((prev) => ({
+      ...prev,
+      customCurrentAffairs: (prev.customCurrentAffairs || []).filter((a) => a.id !== id),
+    }));
+    setRemoteCurrentAffairs((prev) => prev.filter((a) => a.id !== id));
+    if (isVerifiedCloudAdmin) {
+      try {
+        await deleteDoc(doc(db, 'currentAffairs', id));
+      } catch (err) {
+        handleFirestoreError(err, OperationType.DELETE, `currentAffairs/${id}`);
+      }
     }
   };
 
@@ -1695,13 +2960,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     dismissSplash: () => setShowSplash(false),
     onboarded: state.onboarded,
     completeOnboarding,
-    activeTab,
+    activeTab: activeTabState,
     setActiveTab,
+    tutorOpen,
+    openAiTutor: () => setTutorOpen(true),
+    closeAiTutor: () => setTutorOpen(false),
     theme: state.theme,
     toggleTheme: () =>
       setState((prev) => ({ ...prev, theme: prev.theme === 'light' ? 'dark' : 'light' })),
     soundMuted: state.soundMuted,
     toggleSound: () => setState((prev) => ({ ...prev, soundMuted: !prev.soundMuted })),
+    notificationPrefs: state.notificationPrefs,
+    updateNotificationPrefs: (patch) =>
+      setState((prev) => ({
+        ...prev,
+        notificationPrefs: { ...prev.notificationPrefs, ...patch },
+      })),
+    localReminders: state.localReminders,
+    activeReminderBanner,
+    dismissReminderBanner: () => setActiveReminderBanner(null),
+    markAllRemindersRead: () =>
+      setState((prev) => ({
+        ...prev,
+        localReminders: prev.localReminders.map((r) => ({ ...r, read: true })),
+      })),
+    triggerGoalReminder: (forceKind) => dispatchOceanReminder(forceKind, false, false),
+    publicDataError,
+    retryPublicLoad: loadPublicCollections,
     language: state.profile.preferredLanguage,
     setLanguage: (lang) => updateProfile({ preferredLanguage: lang }),
     firebaseUser,
@@ -1723,6 +3008,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     testAttempts: state.testAttempts,
     gameSessions: state.gameSessions,
     bookmarks: state.bookmarks,
+    difficultQuestionIds: state.difficultQuestionIds,
+    revisionListIds: state.revisionListIds,
+    pyqAttempts: state.pyqAttempts,
+    loadingQuestions,
     studyPlan: state.studyPlan,
     saveStudyPlan,
     chatHistory: state.chatHistory,
@@ -1736,6 +3025,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     leaderboard,
     announcements,
     recordQuestionResult,
+    recordPyqAttempt,
+    toggleDifficultQuestion,
+    toggleRevisionQuestion,
     recordGameSession,
     recordMockAttempt,
     updateVideoProgress,
@@ -1757,11 +3049,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     addAnnouncement,
     seedFirestoreDatabase,
     toggleStudentActive,
+    oceanQuestMissions,
+    oceanQuestProgress: state.oceanQuestProgress,
+    evaluateOceanQuestRun,
+    upsertOceanQuestMission,
+    toggleOceanQuestMissionPublished,
+    deleteOceanQuestMission,
     fetchAdminAnalytics,
+    predictorQuestions,
+    predictorCategories,
+    predictionReports,
+    currentAffairs,
+    savePredictorQuestion,
+    reviewPredictorQuestion,
+    deletePredictorQuestion,
+    upsertPredictorCategory,
+    savePredictionReport,
+    togglePredictionReportOutdated,
+    upsertCurrentAffairsItem,
+    deleteCurrentAffairsItem,
     tutorPrefill,
     openTutorWithPrompt: (prompt) => {
       setTutorPrefill(prompt);
-      setActiveTab('tutor');
+      setTutorOpen(true);
     },
     clearTutorPrefill: () => setTutorPrefill(null),
     rewardToast,

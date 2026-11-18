@@ -3,9 +3,10 @@ import { Calendar, CheckCircle2, Circle, Loader2, Save, Sparkles } from 'lucide-
 import { useApp } from '../context/AppContext';
 import { SUBJECT_NAMES, UI_TEXT } from '../data/i18n';
 import { StudyBlock, StudyPlan, SubjectId } from '../types/examverse';
+import { BackHomeBar, OceanGlassCard } from './OceanTheme';
 
 export const StudyPlannerView: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
-  const { language, studyPlan, saveStudyPlan } = useApp();
+  const { language, studyPlan, saveStudyPlan, setActiveTab } = useApp();
   const t = UI_TEXT[language];
 
   const [hoursPerDay, setHoursPerDay] = useState(studyPlan?.hoursPerDay || 4);
@@ -105,7 +106,7 @@ export const StudyPlannerView: React.FC<{ onBack?: () => void }> = ({ onBack }) 
           examDate,
         }),
       });
-      if (!res.ok) throw new Error('AI planner fallback');
+      if (!res.ok) throw new Error('Planner fallback');
       const data = await res.json();
       const plan: StudyPlan = {
         hoursPerDay,
@@ -148,33 +149,28 @@ export const StudyPlannerView: React.FC<{ onBack?: () => void }> = ({ onBack }) 
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="font-display text-2xl font-bold flex items-center gap-2">
-            <Calendar className="w-6 h-6 text-blue-700 dark:text-amber-400" />
-            {t.studyPlanner}
-          </h1>
-          <p className="text-sm text-slate-600 dark:text-slate-300 mt-1">
-            Configure your daily hours, weak subjects, and exam date to build an editable SSC CGL timetable.
-          </p>
-        </div>
-        {onBack && (
-          <button
-            type="button"
-            onClick={onBack}
-            className="px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-semibold cursor-pointer"
-          >
-            Back to Dashboard
-          </button>
-        )}
+      <BackHomeBar
+        title={t.studyPlanner}
+        onBack={onBack}
+        onHome={() => setActiveTab('home')}
+      />
+
+      <div>
+        <h1 className="font-display text-2xl font-extrabold flex items-center gap-2 text-[#062B3D] dark:text-[#F3FAFA]">
+          <Calendar className="w-6 h-6 text-[#20C7C9]" />
+          {t.studyPlanner}
+        </h1>
+        <p className="text-sm text-[#075985] dark:text-[#8DE1D3] mt-1">
+          Configure your daily hours, weak subjects, and exam date to build an editable SSC CGL timetable.
+        </p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Configuration Form */}
-        <div className="lg:col-span-5 bg-white dark:bg-[#0F1E36] border border-slate-200 dark:border-slate-800 rounded-2xl p-6 space-y-5">
+        <OceanGlassCard className="lg:col-span-5 p-6 space-y-5">
           <div>
-            <label className="block text-xs font-semibold mb-1.5">
-              Daily Study Hours: <span className="font-mono-num">{hoursPerDay} hrs</span>
+            <label className="block text-xs font-bold mb-1.5 text-[#062B3D] dark:text-[#F3FAFA]">
+              Daily Study Hours: <span className="font-mono-num text-[#075985] dark:text-[#55D6D0]">{hoursPerDay} hrs</span>
             </label>
             <input
               type="range"
@@ -183,16 +179,16 @@ export const StudyPlannerView: React.FC<{ onBack?: () => void }> = ({ onBack }) 
               step={0.5}
               value={hoursPerDay}
               onChange={(e) => setHoursPerDay(Number(e.target.value))}
-              className="w-full accent-blue-700 dark:accent-amber-400"
+              className="w-full accent-[#20C7C9]"
             />
           </div>
 
           <div>
-            <label className="block text-xs font-semibold mb-1.5">Exam Target</label>
+            <label className="block text-xs font-bold mb-1.5">Exam Target</label>
             <select
               value={examTarget}
               onChange={(e) => setExamTarget(e.target.value)}
-              className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-[#081221] px-3 py-2 text-sm"
+              className="w-full min-h-[42px] rounded-xl border border-[#8DE1D3]/60 dark:border-[#20C7C9]/30 bg-[#F3FAFA] dark:bg-[#062B3D] px-3 py-2 text-sm"
             >
               <option>SSC CGL Tier 1 + Tier 2</option>
               <option>SSC CGL Tier 1 Sprint</option>
@@ -201,27 +197,27 @@ export const StudyPlannerView: React.FC<{ onBack?: () => void }> = ({ onBack }) 
           </div>
 
           <div>
-            <label className="block text-xs font-semibold mb-1.5">Target Exam Date</label>
+            <label className="block text-xs font-bold mb-1.5">Target Exam Date</label>
             <input
               type="date"
               value={examDate}
               onChange={(e) => setExamDate(e.target.value)}
-              className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-[#081221] px-3 py-2 text-sm"
+              className="w-full min-h-[42px] rounded-xl border border-[#8DE1D3]/60 dark:border-[#20C7C9]/30 bg-[#F3FAFA] dark:bg-[#062B3D] px-3 py-2 text-sm"
             />
           </div>
 
           <div>
-            <div className="text-xs font-semibold mb-2">Weak Subjects (Priority)</div>
+            <div className="text-xs font-bold mb-2">Weak Subjects (Priority)</div>
             <div className="flex flex-wrap gap-2">
               {allSubjects.map((s) => (
                 <button
                   key={s}
                   type="button"
                   onClick={() => toggleWeak(s)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium border cursor-pointer ${
+                  className={`min-h-[38px] px-3 py-1.5 rounded-xl text-xs font-semibold border cursor-pointer ${
                     weakSubjects.includes(s)
-                      ? 'border-rose-500 bg-rose-50 text-rose-700 dark:bg-rose-950/30 dark:text-rose-300'
-                      : 'border-slate-200 dark:border-slate-700'
+                      ? 'border-[#FF8B78] bg-[#FF8B78]/15 text-[#9A2D1F] dark:text-[#FF8B78]'
+                      : 'border-[#8DE1D3]/50 dark:border-[#20C7C9]/25'
                   }`}
                 >
                   {SUBJECT_NAMES[s][language]}
@@ -231,17 +227,17 @@ export const StudyPlannerView: React.FC<{ onBack?: () => void }> = ({ onBack }) 
           </div>
 
           <div>
-            <div className="text-xs font-semibold mb-2">Strong Subjects (Maintenance)</div>
+            <div className="text-xs font-bold mb-2">Strong Subjects (Maintenance)</div>
             <div className="flex flex-wrap gap-2">
               {allSubjects.map((s) => (
                 <button
                   key={s}
                   type="button"
                   onClick={() => toggleStrong(s)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium border cursor-pointer ${
+                  className={`min-h-[38px] px-3 py-1.5 rounded-xl text-xs font-semibold border cursor-pointer ${
                     strongSubjects.includes(s)
-                      ? 'border-emerald-600 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300'
-                      : 'border-slate-200 dark:border-slate-700'
+                      ? 'border-[#20C7C9] bg-[#20C7C9]/15 text-[#075985] dark:text-[#55D6D0]'
+                      : 'border-[#8DE1D3]/50 dark:border-[#20C7C9]/25'
                   }`}
                 >
                   {SUBJECT_NAMES[s][language]}
@@ -254,24 +250,26 @@ export const StudyPlannerView: React.FC<{ onBack?: () => void }> = ({ onBack }) 
             type="button"
             disabled={generating}
             onClick={handleGenerate}
-            className="w-full py-3 rounded-xl bg-[#0A192F] dark:bg-amber-500 text-white dark:text-[#081221] font-semibold text-sm flex items-center justify-center gap-2 cursor-pointer"
+            className="w-full min-h-[48px] py-3 rounded-xl bg-[#075985] hover:bg-[#062B3D] dark:bg-[#20C7C9] dark:hover:bg-[#55D6D0] text-white dark:text-[#062B3D] font-bold text-sm flex items-center justify-center gap-2 transition-colors cursor-pointer"
           >
             {generating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
             Generate Smart Timetable
           </button>
-        </div>
+        </OceanGlassCard>
 
         {/* Generated & Editable Schedule */}
-        <div className="lg:col-span-7 bg-white dark:bg-[#0F1E36] border border-slate-200 dark:border-slate-800 rounded-2xl p-6 space-y-5">
+        <OceanGlassCard className="lg:col-span-7 p-6 space-y-5">
           {draftPlan ? (
             <>
-              <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 dark:border-slate-800 pb-4">
+              <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#8DE1D3]/35 dark:border-[#20C7C9]/20 pb-4">
                 <div>
-                  <h2 className="font-display font-bold text-lg">Your Daily Timetable</h2>
-                  <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">
+                  <h2 className="font-display font-bold text-lg text-[#062B3D] dark:text-[#F3FAFA]">
+                    Your Daily Timetable
+                  </h2>
+                  <p className="text-xs text-[#073B50] dark:text-[#8DE1D3] mt-1">
                     {draftPlan.summary}
                   </p>
-                  <p className="text-xs text-blue-700 dark:text-amber-400 mt-1 font-medium">
+                  <p className="text-xs text-[#075985] dark:text-[#55D6D0] mt-1 font-semibold">
                     Weekly Target: {draftPlan.weeklyTarget}
                   </p>
                 </div>
@@ -282,9 +280,9 @@ export const StudyPlannerView: React.FC<{ onBack?: () => void }> = ({ onBack }) 
                     setSavedNotice(true);
                     setTimeout(() => setSavedNotice(false), 1800);
                   }}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-semibold cursor-pointer"
+                  className="min-h-[40px] inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-[#8DE1D3]/60 dark:border-[#20C7C9]/30 text-xs font-bold cursor-pointer"
                 >
-                  <Save className="w-3.5 h-3.5" />
+                  <Save className="w-3.5 h-3.5 text-[#20C7C9]" />
                   {savedNotice ? 'Saved' : 'Save Edits'}
                 </button>
               </div>
@@ -293,26 +291,26 @@ export const StudyPlannerView: React.FC<{ onBack?: () => void }> = ({ onBack }) 
                 {draftPlan.blocks.map((block, idx) => (
                   <div
                     key={idx}
-                    className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 flex items-start justify-between gap-3"
+                    className="p-4 rounded-xl border border-[#8DE1D3]/45 dark:border-[#20C7C9]/20 flex items-start justify-between gap-3"
                   >
                     <div className="flex-1 space-y-1.5">
-                      <div className="text-xs font-mono-num text-slate-500 dark:text-slate-400">
+                      <div className="text-xs font-mono-num text-[#075985] dark:text-[#8DE1D3]">
                         {block.timeSlot} · {block.activityType} · {block.subject} · {block.durationMinutes} min
                       </div>
                       <input
                         type="text"
                         value={block.topic}
                         onChange={(e) => updateBlockTopic(idx, e.target.value)}
-                        className="w-full bg-transparent font-medium text-sm border-b border-transparent focus:border-blue-600 focus:outline-none pb-0.5"
+                        className="w-full bg-transparent font-semibold text-sm border-b border-transparent focus:border-[#20C7C9] focus:outline-none pb-0.5"
                       />
                     </div>
                     <button
                       type="button"
                       onClick={() => toggleBlockDone(idx)}
-                      className={`p-1.5 rounded-lg cursor-pointer ${
-                        block.completed ? 'text-emerald-600' : 'text-slate-400'
+                      className={`min-w-[40px] min-h-[40px] flex items-center justify-center rounded-xl cursor-pointer ${
+                        block.completed ? 'text-[#20C7C9]' : 'text-[#075985]/45 dark:text-[#8DE1D3]/45'
                       }`}
-                      aria-label="Toggle block completion"
+                      aria-label={block.completed ? 'Mark block incomplete' : 'Mark block complete'}
                     >
                       {block.completed ? (
                         <CheckCircle2 className="w-5 h-5" />
@@ -326,16 +324,16 @@ export const StudyPlannerView: React.FC<{ onBack?: () => void }> = ({ onBack }) 
             </>
           ) : (
             <div className="h-full flex flex-col items-center justify-center text-center py-12 space-y-3">
-              <Calendar className="w-10 h-10 text-slate-400" />
+              <Calendar className="w-10 h-10 text-[#20C7C9]" />
               <div className="font-display font-bold text-base">
                 Generate your personalized SSC CGL schedule
               </div>
-              <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm">
+              <p className="text-xs text-[#075985] dark:text-[#8DE1D3] max-w-sm">
                 Pick your daily hours and weak subjects on the left, then click Generate Smart Timetable.
               </p>
             </div>
           )}
-        </div>
+        </OceanGlassCard>
       </div>
     </div>
   );
