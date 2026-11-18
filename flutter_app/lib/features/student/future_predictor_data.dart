@@ -346,11 +346,11 @@ ExamYearNotice getExamYearNotice(int examYear, String tier) {
       tier: tier,
       notificationStatus: 'tentative',
       examDateLabel: tier == 'Tier 1'
-          ? 'Tentative: Official SSC CGL 2026 calendar notification pending confirmation'
+          ? 'Tentative / Reference: Tier 1 memory-based archive (Sept 30 – Oct 30, 2026); await final SSC scorecard'
           : 'Tentative: Official Tier 2 schedule announced after Tier 1 result',
       patternStatus: 'tentative',
       patternSummary: tier == 'Tier 1'
-          ? 'Estimated Practice Format (based on verified 2022–2025 Tier 1 scheme: 100 Qs · 200 Marks · 60 min · +2/-0.50)'
+          ? 'Latest Observed Format (based on 2022–2026 Tier 1 scheme: 100 Qs · 200 Marks · 60 min · +2/-0.50)'
           : 'Estimated Practice Format (based on verified Tier 2 Module scheme: +3/-1 with Computer Knowledge Module II)',
       sourceLabel: 'SSC Official Portal (ssc.gov.in)',
       sourceUrl: 'https://ssc.gov.in',
@@ -447,17 +447,17 @@ HistoricalAnalysisReport analyzeHistoricalPyqs(
   final allPyqs = questions.where((q) {
     final src = (q['sourceType'] ?? 'PYQ').toString();
     final yr = int.tryParse((q['year'] ?? 0).toString()) ?? 0;
-    return src == 'PYQ' && yr >= 2016 && yr <= 2025;
+    return src == 'PYQ' && yr >= 2016 && yr <= 2026;
   }).toList();
 
   final scopedPyqs = tierFilter == 'All'
       ? allPyqs
       : allPyqs.where((q) => (q['tier'] ?? 'Tier 1').toString() == tierFilter).toList();
 
-  const all10Years = [2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025];
+  const all11Years = [2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026];
   final yearsPresent = <int>{};
   final yearMap = <int, YearTrendStat>{
-    for (final y in all10Years) y: YearTrendStat(y),
+    for (final y in all11Years) y: YearTrendStat(y),
   };
 
   for (final q in allPyqs) {
@@ -474,8 +474,8 @@ HistoricalAnalysisReport analyzeHistoricalPyqs(
     }
   }
 
-  final yearsWithData = all10Years.where(yearsPresent.contains).toList();
-  final missingYears = all10Years.where((y) => !yearsPresent.contains(y)).toList();
+  final yearsWithData = all11Years.where(yearsPresent.contains).toList();
+  final missingYears = all11Years.where((y) => !yearsPresent.contains(y)).toList();
 
   final subjectCounts = <String, int>{
     'quant': 0,
@@ -542,13 +542,13 @@ HistoricalAnalysisReport analyzeHistoricalPyqs(
       : (((difficultyCounts['Hard'] ?? 0) / scopedPyqs.length) * 100).round();
 
   final insights = [
-    'Archive coverage: ${allPyqs.length} verified PYQs across ${yearsWithData.length}/10 years.',
+    'Archive coverage: ${allPyqs.length} PYQs across ${yearsWithData.length}/11 years.',
     'Tier split: $t1Total Tier 1 PYQs vs $t2Total Tier 2 PYQs.',
     'Difficulty mix ($tierFilter): ${difficultyCounts['Easy']} Easy, ${difficultyCounts['Medium']} Medium, ${difficultyCounts['Hard']} Hard ($hardPct% Hard).',
     if (missingYears.isNotEmpty)
       'Missing years with 0 imported PYQs yet: ${missingYears.join(', ')}. Syllabus weights supplement those cycles honestly.'
     else
-      'Full 2016–2025 year range has imported verified PYQs.',
+      'Full 2016–2026 year range has imported PYQs.',
   ];
 
   return HistoricalAnalysisReport(
@@ -558,7 +558,7 @@ HistoricalAnalysisReport analyzeHistoricalPyqs(
     missingYears: missingYears,
     subjectCounts: subjectCounts,
     difficultyCounts: difficultyCounts,
-    yearTrends: all10Years.map((y) => yearMap[y]!).toList(),
+    yearTrends: all11Years.map((y) => yearMap[y]!).toList(),
     topRepeatedTopics: topRepeated,
     recentSurgeTopics: recentSurge,
     lessFrequentTopics: lessFrequent,
@@ -676,7 +676,7 @@ List<TopicPredictionItem> buildTopicPredictions({
             : '0 imported PYQs yet; retained from official $tier syllabus (${def.syllabusNote}).');
 
     final rationale = freq > 0
-        ? 'Backed by imported 2016–2025 PYQ frequency (${trend.toLowerCase()} trend) & syllabus weight.'
+        ? 'Backed by imported 2016–2026 PYQ frequency (${trend.toLowerCase()} trend) & syllabus weight.'
         : 'Included via official SSC CGL syllabus weightage (${def.syllabusNote}).';
 
     return TopicPredictionItem(
@@ -805,7 +805,7 @@ PredictedMockBundle buildPredictedMockTest({
     'negativeMarking': negativeMark,
     'questionIds': chosen.map((q) => q['id'].toString()).toList(),
     'description':
-        '${isEstimated ? "ESTIMATED PRACTICE FORMAT · " : ""}Weighted by historical 2016–2025 frequency & top predicted $tier topics.',
+        '${isEstimated ? "ESTIMATED PRACTICE FORMAT · " : ""}Weighted by historical 2016–2026 frequency & top predicted $tier topics.',
     'isPublished': true,
   };
 

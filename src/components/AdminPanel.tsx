@@ -479,9 +479,9 @@ export const AdminPanel: React.FC<{ onSignOut: () => void }> = ({ onSignOut }) =
     });
   }, [questions, qFilterYear, qFilterTier, qFilterSubject, qFilterStatus, qFilterTopic, qSearch]);
 
-  // 2016-2025 Missing Papers & Coverage Matrix
+  // 2016-2026 Missing Papers & Coverage Matrix
   const coverageMatrix = useMemo(() => {
-    const years = [2025, 2024, 2023, 2022, 2021, 2020, 2019, 2018, 2017, 2016];
+    const years = [2026, 2025, 2024, 2023, 2022, 2021, 2020, 2019, 2018, 2017, 2016];
     return years.map((yr) => {
       const yrQs = questions.filter((q) => q.year === yr);
       const t1 = yrQs.filter((q) => q.tier === 'Tier 1').length;
@@ -522,7 +522,7 @@ export const AdminPanel: React.FC<{ onSignOut: () => void }> = ({ onSignOut }) =
   const availableYears = useMemo(
     () =>
       Array.from(
-        new Set([...questions.map((q) => q.year), 2025, 2024, 2023, 2022, 2021, 2020, 2019, 2018, 2017, 2016])
+        new Set([...questions.map((q) => q.year), 2026, 2025, 2024, 2023, 2022, 2021, 2020, 2019, 2018, 2017, 2016])
       ).sort((a, b) => b - a),
     [questions]
   );
@@ -1858,7 +1858,7 @@ export const AdminPanel: React.FC<{ onSignOut: () => void }> = ({ onSignOut }) =
                         : 'border-[#8DE1D3]/60 dark:border-[#20C7C9]/30'
                     }`}
                   >
-                    2016–2025 Missing Papers &amp; Coverage Matrix
+                    2016–2026 Missing Papers &amp; Coverage Matrix
                   </button>
                   <button
                     type="button"
@@ -1877,12 +1877,12 @@ export const AdminPanel: React.FC<{ onSignOut: () => void }> = ({ onSignOut }) =
                 </span>
               </div>
 
-              {/* 2016-2025 Coverage & Missing Papers Table */}
+              {/* 2016-2026 Coverage & Missing Papers Table */}
               {showCoverageMatrix && (
                 <div className="bg-white/95 dark:bg-[#073B50] border border-[#8DE1D3]/45 dark:border-[#20C7C9]/25 rounded-2xl p-5 space-y-3 overflow-x-auto">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <h2 className="font-display font-bold text-sm">
-                      2016–2025 SSC CGL Collection Coverage &amp; Missing Papers
+                      2016–2026 SSC CGL Collection Coverage &amp; Missing Papers
                     </h2>
                     <span className="text-[11px] text-slate-500 dark:text-[#8DE1D3]">
                       Years with 0 questions need CSV/JSON paper import

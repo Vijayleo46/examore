@@ -457,7 +457,7 @@ class _StudentShellState extends State<StudentShell> {
                       'Previous Year Questions',
                       style: TextStyle(fontWeight: FontWeight.w800),
                     ),
-                    subtitle: const Text('2016–2025 Tier 1 & Tier 2 Library'),
+                    subtitle: const Text('2016–2026 Tier 1 & Tier 2 Library'),
                     onTap: () {
                       Navigator.of(context).pop();
                       _openPyqLibrary(uid: uid, language: language);
@@ -815,7 +815,7 @@ class _StudentHomeTab extends StatelessWidget {
         ),
         const SizedBox(height: 12),
 
-        // Dedicated 1-tap Previous Year Question Library (2016-2025)
+        // Dedicated 1-tap Previous Year Question Library (2016-2026)
         OceanGlassCard(
           onTap: onOpenPyqLibrary,
           borderColor: OceanColors.turquoise,
@@ -841,7 +841,7 @@ class _StudentHomeTab extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Previous Year Questions (2016–2025)',
+                      'Previous Year Questions (2016–2026)',
                       style: TextStyle(
                         fontWeight: FontWeight.w800,
                         fontSize: 14.5,
@@ -849,7 +849,7 @@ class _StudentHomeTab extends StatelessWidget {
                     ),
                     SizedBox(height: 2),
                     Text(
-                      'Browse 10 years of SSC CGL Tier 1 & Tier 2 Q&A, step-by-step solutions, shortcuts & revision lists.',
+                      'Browse 11 years of SSC CGL Tier 1 & Tier 2 Q&A, step-by-step solutions, shortcuts & revision lists.',
                       style: TextStyle(
                         fontSize: 12,
                         color: OceanColors.textMuted,
@@ -898,7 +898,7 @@ class _StudentHomeTab extends StatelessWidget {
                     ),
                     SizedBox(height: 2),
                     Text(
-                      '2016–2025 PYQ trend radar, AI expected practice drills, predicted mocks & roadmap.',
+                      '2016–2026 PYQ trend radar, AI expected practice drills, predicted mocks & roadmap.',
                       style: TextStyle(
                         fontSize: 12,
                         color: OceanColors.textMuted,

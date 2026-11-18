@@ -295,7 +295,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                 Future Exam Predictor · 2026 / 2027 / 2028
               </div>
               <div className="font-display font-extrabold text-sm sm:text-base truncate">
-                2016–2025 Trend Analysis, Topic Confidence &amp; Predicted Mocks
+                2016–2026 Trend Analysis, Topic Confidence &amp; Predicted Mocks
               </div>
             </div>
           </div>
@@ -547,7 +547,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
           className="text-left bg-white/95 dark:bg-[#073B50]/90 border border-[#8DE1D3]/50 dark:border-[#20C7C9]/25 hover:border-[#20C7C9] rounded-2xl p-5 ocean-shadow transition-all cursor-pointer"
         >
           <BookOpen className="w-5 h-5 text-[#075985] dark:text-[#55D6D0] mb-2.5" />
-          <div className="font-display font-bold text-base">2016–2025 PYQ Library</div>
+          <div className="font-display font-bold text-base">2016–2026 PYQ Library</div>
           <p className="text-xs text-[#073B50]/80 dark:text-[#8DE1D3] mt-1">
             Browse all SSC CGL questions &amp; answers with step-by-step solutions and shortcuts.
           </p>

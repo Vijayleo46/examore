@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/ocean_components.dart';
 import '../../services/firestore_service.dart';
+import 'pyq_archive_loader.dart';
 import 'student_i18n.dart';
+import 'student_mock_runner.dart';
 import 'student_tutor_screen.dart';
 
 enum _PyqMode { study, practice }
@@ -78,6 +80,7 @@ class PyqLibraryView extends StatefulWidget {
 
 class _PyqLibraryViewState extends State<PyqLibraryView> {
   static const List<int> _yearsList = [
+    2026,
     2025,
     2024,
     2023,
@@ -131,26 +134,75 @@ class _PyqLibraryViewState extends State<PyqLibraryView> {
       _loading = true;
       _error = null;
     });
+    final bundled = await PyqArchiveLoader.loadBundledPastPapers();
+    List<Map<String, dynamic>> remote = const [];
+    StudentPyqState pyqState = const StudentPyqState();
     try {
-      final results = await Future.wait([
-        widget.firestoreService.fetchAllPublishedQuestionsUnbounded(),
-        widget.firestoreService.loadStudentPyqState(widget.uid),
-      ]);
-      if (mounted) {
-        setState(() {
-          _allQuestions = results[0] as List<Map<String, dynamic>>;
-          _pyqState = results[1] as StudentPyqState;
-          _loading = false;
-        });
-      }
-    } catch (_) {
-      if (mounted) {
-        setState(() {
+      remote = await widget.firestoreService.fetchAllPublishedQuestionsUnbounded();
+    } catch (_) {}
+    try {
+      pyqState = await widget.firestoreService.loadStudentPyqState(widget.uid);
+    } catch (_) {}
+
+    final merged = PyqArchiveLoader.mergeWithFirestore(bundled, remote);
+    if (mounted) {
+      setState(() {
+        _allQuestions = merged;
+        _pyqState = pyqState;
+        if (merged.isEmpty) {
           _error = 'Unable to load the question library right now.';
-          _loading = false;
-        });
-      }
+        }
+        _loading = false;
+      });
     }
+  }
+
+  void _launchPastPaperMock() {
+    final tierParam = _tierFilter == 'all' ? 'Tier 1' : _tierFilter;
+    final selected = PyqArchiveLoader.buildMockSet(
+      pool: _allQuestions,
+      year: _yearFilter,
+      tier: tierParam,
+      subject: _subjectFilter,
+      limit: 25,
+    );
+    if (selected.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No matching questions found for this Past Paper Mock.'),
+        ),
+      );
+      return;
+    }
+    final yrLabel = _yearFilter == null ? '2016–2026' : '$_yearFilter';
+    final marksPerQ = tierParam == 'Tier 2' ? 3 : 2;
+    final negPerQ = tierParam == 'Tier 2' ? 1.0 : 0.5;
+    final mockConfig = <String, dynamic>{
+      'id': 'pyp_mock_${yrLabel}_${tierParam.toLowerCase().replaceAll(' ', '')}',
+      'testId': 'pyp_mock_${yrLabel}_${tierParam.toLowerCase().replaceAll(' ', '')}',
+      'title': 'SSC CGL $yrLabel $tierParam Past Paper Mock',
+      'category': tierParam,
+      'durationMinutes': (selected.length * 0.9).round().clamp(10, 60),
+      'totalQuestions': selected.length,
+      'totalMarks': selected.length * marksPerQ,
+      'marksPerCorrect': marksPerQ,
+      'negativeMarking': negPerQ,
+      'questionIds': selected.map((q) => (q['id'] ?? '').toString()).toList(),
+      'description':
+          'Timed past-paper test drawn from SSC CGL $yrLabel $tierParam archive.',
+    };
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => MockTestRunnerScreen(
+          uid: widget.uid,
+          mockTest: mockConfig,
+          preferredLanguage: widget.preferredLanguage,
+          firestoreService: widget.firestoreService,
+          onGoHome: widget.onGoHome,
+          initialQuestions: selected,
+        ),
+      ),
+    );
   }
 
   String _answerStatusOf(Map<String, dynamic> q) {
@@ -467,7 +519,7 @@ class _PyqLibraryViewState extends State<PyqLibraryView> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  'SSC CGL 10-Year Archive (2016–2025)',
+                  'SSC CGL 11-Year Archive (2016–2026)',
                   style: TextStyle(
                     color: OceanColors.foamWhite,
                     fontSize: 18,
@@ -476,7 +528,7 @@ class _PyqLibraryViewState extends State<PyqLibraryView> {
                 ),
                 const SizedBox(height: 4),
                 const Text(
-                  'Browse official previous year papers with verified keys, step-by-step solutions, shortcuts, and revision lists.',
+                  'Browse official 2016–2025 keys & 2026 Tier 1 archive with step-by-step solutions, shortcuts, and revision lists.',
                   style: TextStyle(
                     color: OceanColors.seaGlass,
                     fontSize: 12.5,
@@ -505,6 +557,19 @@ class _PyqLibraryViewState extends State<PyqLibraryView> {
                       value: attemptedCount > 0 ? '$accuracyPct%' : '—',
                     ),
                   ],
+                ),
+                const SizedBox(height: 12),
+                FilledButton.icon(
+                  onPressed: _allQuestions.isEmpty ? null : _launchPastPaperMock,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: OceanColors.coralAccent,
+                    foregroundColor: OceanColors.deepOcean,
+                  ),
+                  icon: const Icon(Icons.play_arrow_rounded, size: 18),
+                  label: Text(
+                    'Practice ${_yearFilter ?? '2016–2026'} Mock (25Q)',
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
                 ),
               ],
             ),
@@ -576,7 +641,7 @@ class _PyqLibraryViewState extends State<PyqLibraryView> {
 
           const SizedBox(height: 12),
 
-          // 2016-2025 Year Strip with Real Dynamic Counts
+          // 2016-2026 Year Strip with Real Dynamic Counts
           SizedBox(
             height: 40,
             child: ListView(

@@ -5,6 +5,7 @@ import 'package:video_player/video_player.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/ocean_components.dart';
 import '../../services/firestore_service.dart';
+import 'pyq_archive_loader.dart';
 import 'student_i18n.dart';
 import 'student_tutor_screen.dart';
 
@@ -123,7 +124,33 @@ class _MockTestRunnerScreenState extends State<MockTestRunnerScreen> {
         final rawIds = (widget.mockTest['questionIds'] as List<dynamic>? ?? [])
             .map((e) => e.toString())
             .toList();
-        list = await widget.firestoreService.fetchQuestionsForMock(rawIds);
+        List<Map<String, dynamic>> remote = const [];
+        try {
+          remote = await widget.firestoreService.fetchQuestionsForMock(rawIds);
+        } catch (_) {}
+        final bundled = await PyqArchiveLoader.loadBundledPastPapers();
+        final merged = PyqArchiveLoader.mergeWithFirestore(bundled, remote);
+        if (rawIds.isNotEmpty) {
+          final idSet = rawIds.toSet();
+          final matched = merged
+              .where((q) => idSet.contains((q['id'] ?? '').toString()))
+              .toList();
+          list = matched.isNotEmpty
+              ? matched
+              : PyqArchiveLoader.buildMockSet(
+                  pool: merged,
+                  tier: (widget.mockTest['category'] ?? 'Tier 1').toString(),
+                  limit: 25,
+                );
+        } else {
+          list = remote.isNotEmpty
+              ? remote
+              : PyqArchiveLoader.buildMockSet(
+                  pool: merged,
+                  tier: (widget.mockTest['category'] ?? 'Tier 1').toString(),
+                  limit: 25,
+                );
+        }
       }
       if (!mounted) return;
       if (list.isEmpty) {

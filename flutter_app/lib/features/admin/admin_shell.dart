@@ -285,11 +285,11 @@ class _AdminShellState extends State<AdminShell> {
   }
 
   void _openCoverageMatrixDialog() {
-    const years = [2025, 2024, 2023, 2022, 2021, 2020, 2019, 2018, 2017, 2016];
+    const years = [2026, 2025, 2024, 2023, 2022, 2021, 2020, 2019, 2018, 2017, 2016];
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('2016–2025 PYQ Coverage Matrix'),
+        title: const Text('2016–2026 PYQ Coverage Matrix'),
         content: SizedBox(
           width: 460,
           child: SingleChildScrollView(
@@ -531,10 +531,10 @@ class _AdminShellState extends State<AdminShell> {
                   children: [
                     Expanded(
                       child: DropdownButtonFormField<int>(
-                        value: (year >= 2016 && year <= 2025) ? year : 2024,
+                        value: (year >= 2016 && year <= 2026) ? year : 2024,
                         decoration: const InputDecoration(labelText: 'Exam Year'),
                         items: [
-                          for (int y = 2025; y >= 2016; y--)
+                          for (int y = 2026; y >= 2016; y--)
                             DropdownMenuItem(value: y, child: Text('$y')),
                         ],
                         onChanged: (v) {
@@ -1662,7 +1662,7 @@ class _AdminShellState extends State<AdminShell> {
                       OutlinedButton.icon(
                         onPressed: _openCoverageMatrixDialog,
                         icon: const Icon(Icons.calendar_view_month),
-                        label: const Text('2016–2025 Coverage'),
+                        label: const Text('2016–2026 Coverage'),
                       ),
                       OutlinedButton.icon(
                         onPressed: _openDuplicateDetectorDialog,
@@ -1775,7 +1775,7 @@ class _AdminShellState extends State<AdminShell> {
                         items: [
                           const DropdownMenuItem<int?>(
                               value: null, child: Text('All Years')),
-                          for (int y = 2025; y >= 2016; y--)
+                          for (int y = 2026; y >= 2016; y--)
                             DropdownMenuItem<int?>(value: y, child: Text('$y')),
                         ],
                         onChanged: (v) => setState(() => _qYearFilter = v),

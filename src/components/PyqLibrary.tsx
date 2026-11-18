@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   ArrowLeft,
@@ -15,6 +15,7 @@ import {
   Flag,
   Layers,
   ListChecks,
+  Play,
   RotateCcw,
   Search,
   ShieldCheck,
@@ -28,9 +29,11 @@ import { SUBJECT_NAMES, UI_TEXT } from '../data/i18n';
 import { soundFX } from '../lib/sound';
 import {
   AnswerVerificationStatus,
+  MockTestConfig,
   Question,
   SubjectId,
 } from '../types/examverse';
+import { MockTestEngine } from './MockTestEngine';
 import { FirstTimeTip, OceanGlassCard } from './OceanTheme';
 
 type StudyMode = 'study' | 'practice';
@@ -43,7 +46,18 @@ type CollectionScope =
   | 'attempted'
   | 'incorrect';
 
-const YEARS_2016_2025 = [2025, 2024, 2023, 2022, 2021, 2020, 2019, 2018, 2017, 2016];
+interface PyqArchiveSummary {
+  total: number;
+  byYear: Record<number, number>;
+  bySubject: Record<SubjectId, number>;
+  byTier: { tier1: number; tier2: number };
+  byStatus: { official: number; unofficial: number; needs_verification: number };
+  topicsBySubject: Record<string, string[]>;
+  examDates: string[];
+  shifts: string[];
+}
+
+const YEARS_2016_2026 = [2026, 2025, 2024, 2023, 2022, 2021, 2020, 2019, 2018, 2017, 2016];
 const PAGE_SIZE = 20;
 
 interface PyqLibraryProps {
@@ -130,6 +144,22 @@ export const PyqLibrary: React.FC<PyqLibraryProps> = ({
   // Pagination (never truncates total collection)
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
+  // Full 20,956+ Archive Server Integration (falls back cleanly to local libraryPool if unavailable)
+  const [archiveSummary, setArchiveSummary] = useState<PyqArchiveSummary | null>(null);
+  const [serverItems, setServerItems] = useState<Question[]>([]);
+  const [serverTotal, setServerTotal] = useState<number>(0);
+  const [serverPage, setServerPage] = useState<number>(1);
+  const [loadingArchive, setLoadingArchive] = useState<boolean>(false);
+  const [archiveReady, setArchiveReady] = useState<boolean>(false);
+  const archiveCacheRef = useRef<Map<string, Question>>(new Map());
+
+  // 1-Click Past Paper Mock Launcher state
+  const [activeMock, setActiveMock] = useState<{
+    test: MockTestConfig;
+    questions: Question[];
+  } | null>(null);
+  const [launchingMock, setLaunchingMock] = useState(false);
+
   // Inline Quick Answer preview map & Active Question Detail Screen
   const [inlineAnswerVisible, setInlineAnswerVisible] = useState<Record<string, boolean>>({});
   const [detailQuestionId, setDetailQuestionId] = useState<string | null>(null);
@@ -139,15 +169,100 @@ export const PyqLibrary: React.FC<PyqLibraryProps> = ({
   // Practice session state
   const [sessionSelected, setSessionSelected] = useState<Record<string, number>>({});
 
-  // Visible pool respecting publish flag
+  // Visible pool respecting publish flag (curated 326 + any custom Firestore items)
   const libraryPool = useMemo(() => {
     return questions.filter((q) => isAdmin || q.isPublished !== false);
   }, [questions, isAdmin]);
 
-  // Real dynamic counts (strictly computed from stored records, never hardcoded)
+  // Fetch archive summary once on mount
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/pyq/summary')
+      .then((res) => (res.ok ? res.json() : Promise.reject(new Error('Summary unavailable'))))
+      .then((data: PyqArchiveSummary) => {
+        if (cancelled || !data || typeof data.total !== 'number') return;
+        setArchiveSummary(data);
+        setArchiveReady(true);
+      })
+      .catch(() => {
+        if (!cancelled) setArchiveReady(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Fetch matching paginated questions from full archive when scope === 'all'
+  useEffect(() => {
+    if (!archiveReady || scope !== 'all') return;
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      setLoadingArchive(true);
+      const params = new URLSearchParams({
+        year: selectedYear,
+        tier: selectedTier,
+        subject: selectedSubject,
+        topic: selectedTopic,
+        examDate: selectedExamDate,
+        shift: selectedShift,
+        difficulty: selectedDifficulty,
+        answerStatus: selectedStatus,
+        q: searchQuery.trim(),
+        sort: sortBy,
+        page: String(serverPage),
+        limit: String(PAGE_SIZE),
+      });
+      fetch(`/api/pyq/questions?${params.toString()}`)
+        .then((res) => (res.ok ? res.json() : Promise.reject(new Error('Query failed'))))
+        .then((data: { items?: Question[]; total?: number }) => {
+          if (cancelled) return;
+          const incoming = Array.isArray(data.items) ? data.items : [];
+          incoming.forEach((item) => archiveCacheRef.current.set(item.id, item));
+          setServerTotal(Number(data.total) || 0);
+          setServerItems((prev) => {
+            if (serverPage === 1) return incoming;
+            const seen = new Set(prev.map((x) => x.id));
+            return [...prev, ...incoming.filter((x) => !seen.has(x.id))];
+          });
+        })
+        .catch(() => {
+          if (!cancelled) setArchiveReady(false);
+        })
+        .finally(() => {
+          if (!cancelled) setLoadingArchive(false);
+        });
+    }, searchQuery.trim() ? 180 : 0);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [
+    archiveReady,
+    scope,
+    selectedYear,
+    selectedTier,
+    selectedSubject,
+    selectedTopic,
+    selectedExamDate,
+    selectedShift,
+    selectedDifficulty,
+    selectedStatus,
+    searchQuery,
+    sortBy,
+    serverPage,
+  ]);
+
+  // Reset server page to 1 whenever any filter changes
+  const resetPagination = () => {
+    setVisibleCount(PAGE_SIZE);
+    setServerPage(1);
+  };
+
+  // Real dynamic counts (archive summary + local stats)
   const libraryStats = useMemo(() => {
     const byYear: Record<number, number> = {};
-    YEARS_2016_2025.forEach((y) => {
+    YEARS_2016_2026.forEach((y) => {
       byYear[y] = 0;
     });
     const bySubject: Record<SubjectId, number> = {
@@ -157,6 +272,33 @@ export const PyqLibrary: React.FC<PyqLibraryProps> = ({
       ga: 0,
       computer: 0,
     };
+
+    const incorrectCount = Object.values(pyqAttempts).filter((a) => !a.isCorrect).length;
+    const attemptedCount = Object.keys(pyqAttempts).length;
+    const bookmarkedQCount = bookmarks.filter((b) => b.itemType === 'question').length;
+
+    if (archiveReady && archiveSummary) {
+      YEARS_2016_2026.forEach((y) => {
+        byYear[y] = archiveSummary.byYear[y] || 0;
+      });
+      (['quant', 'reasoning', 'english', 'ga', 'computer'] as SubjectId[]).forEach((s) => {
+        bySubject[s] = archiveSummary.bySubject[s] || 0;
+      });
+      return {
+        total: archiveSummary.total,
+        byYear,
+        bySubject,
+        officialCount: archiveSummary.byStatus.official,
+        unofficialCount: archiveSummary.byStatus.unofficial,
+        needsVerificationCount: archiveSummary.byStatus.needs_verification,
+        tier1Count: archiveSummary.byTier.tier1,
+        tier2Count: archiveSummary.byTier.tier2,
+        incorrectCount,
+        attemptedCount,
+        bookmarkedQCount,
+      };
+    }
+
     let officialCount = 0;
     let unofficialCount = 0;
     let needsVerificationCount = 0;
@@ -175,10 +317,6 @@ export const PyqLibrary: React.FC<PyqLibraryProps> = ({
       else needsVerificationCount += 1;
     });
 
-    const incorrectCount = Object.values(pyqAttempts).filter((a) => !a.isCorrect).length;
-    const attemptedCount = Object.keys(pyqAttempts).length;
-    const bookmarkedQCount = bookmarks.filter((b) => b.itemType === 'question').length;
-
     return {
       total: libraryPool.length,
       byYear,
@@ -192,10 +330,22 @@ export const PyqLibrary: React.FC<PyqLibraryProps> = ({
       attemptedCount,
       bookmarkedQCount,
     };
-  }, [libraryPool, pyqAttempts, bookmarks]);
+  }, [archiveReady, archiveSummary, libraryPool, pyqAttempts, bookmarks]);
 
-  // Dynamic filter dropdown options derived from available records
+  // Dynamic filter dropdown options derived from archive summary or local pool
   const availableTopics = useMemo(() => {
+    if (archiveReady && archiveSummary) {
+      if (selectedSubject === 'all') {
+        const set = new Set<string>();
+        Object.values(archiveSummary.topicsBySubject || {}).forEach((arr) =>
+          arr.forEach((tp) => set.add(tp))
+        );
+        return Array.from(set).sort((a, b) => a.localeCompare(b));
+      }
+      return [...(archiveSummary.topicsBySubject[selectedSubject] || [])].sort((a, b) =>
+        a.localeCompare(b)
+      );
+    }
     const set = new Set<string>();
     libraryPool.forEach((q) => {
       if (selectedSubject === 'all' || q.subject === selectedSubject) {
@@ -203,23 +353,29 @@ export const PyqLibrary: React.FC<PyqLibraryProps> = ({
       }
     });
     return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [libraryPool, selectedSubject]);
+  }, [archiveReady, archiveSummary, libraryPool, selectedSubject]);
 
   const availableExamDates = useMemo(() => {
+    if (archiveReady && archiveSummary?.examDates?.length) {
+      return archiveSummary.examDates;
+    }
     const set = new Set<string>();
     libraryPool.forEach((q) => {
       if (q.examDate) set.add(q.examDate);
     });
     return Array.from(set).sort((a, b) => b.localeCompare(a));
-  }, [libraryPool]);
+  }, [archiveReady, archiveSummary, libraryPool]);
 
   const availableShifts = useMemo(() => {
+    if (archiveReady && archiveSummary?.shifts?.length) {
+      return archiveSummary.shifts;
+    }
     const set = new Set<string>();
     libraryPool.forEach((q) => {
       if (q.shift) set.add(q.shift);
     });
     return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [libraryPool]);
+  }, [archiveReady, archiveSummary, libraryPool]);
 
   const bookmarkedIdsSet = useMemo(
     () =>
@@ -232,11 +388,23 @@ export const PyqLibrary: React.FC<PyqLibraryProps> = ({
   const difficultSet = useMemo(() => new Set(difficultQuestionIds), [difficultQuestionIds]);
   const revisionSet = useMemo(() => new Set(revisionListIds), [revisionListIds]);
 
+  const combinedLocalAndCachedPool = useMemo(() => {
+    const map = new Map<string, Question>();
+    libraryPool.forEach((q) => map.set(q.id, q));
+    archiveCacheRef.current.forEach((q, id) => {
+      if (!map.has(id)) map.set(id, q);
+    });
+    return Array.from(map.values());
+  }, [libraryPool, serverItems]);
+
   // Filtered + Sorted questions
   const filteredQuestions = useMemo(() => {
+    if (archiveReady && scope === 'all') {
+      return serverItems;
+    }
     const qLower = searchQuery.trim().toLowerCase();
 
-    const filtered = libraryPool.filter((q) => {
+    const filtered = combinedLocalAndCachedPool.filter((q) => {
       if (scope === 'bookmarked' && !bookmarkedIdsSet.has(q.id)) return false;
       if (scope === 'difficult' && !difficultSet.has(q.id)) return false;
       if (scope === 'revision' && !revisionSet.has(q.id)) return false;
@@ -302,8 +470,10 @@ export const PyqLibrary: React.FC<PyqLibraryProps> = ({
 
     return sorted;
   }, [
-    libraryPool,
+    archiveReady,
     scope,
+    serverItems,
+    combinedLocalAndCachedPool,
     bookmarkedIdsSet,
     difficultSet,
     revisionSet,
@@ -321,9 +491,12 @@ export const PyqLibrary: React.FC<PyqLibraryProps> = ({
     sortBy,
   ]);
 
+  const usingServerPagination = archiveReady && scope === 'all';
+  const totalMatchingCount = usingServerPagination ? serverTotal : filteredQuestions.length;
+
   const displayedQuestions = useMemo(
-    () => filteredQuestions.slice(0, visibleCount),
-    [filteredQuestions, visibleCount]
+    () => (usingServerPagination ? filteredQuestions : filteredQuestions.slice(0, visibleCount)),
+    [usingServerPagination, filteredQuestions, visibleCount]
   );
 
   // Live Practice Session Score
@@ -331,13 +504,13 @@ export const PyqLibrary: React.FC<PyqLibraryProps> = ({
     const entries = Object.entries(sessionSelected);
     let correct = 0;
     entries.forEach(([qId, optIdx]) => {
-      const q = libraryPool.find((item) => item.id === qId);
+      const q = combinedLocalAndCachedPool.find((item) => item.id === qId);
       if (q && q.correctIndex === optIdx) correct++;
     });
     const attempted = entries.length;
     const accuracy = attempted > 0 ? Math.round((correct / attempted) * 100) : 0;
     return { attempted, correct, accuracy };
-  }, [sessionSelected, libraryPool]);
+  }, [sessionSelected, combinedLocalAndCachedPool]);
 
   const activeDetailIndex = useMemo(() => {
     if (!detailQuestionId) return -1;
@@ -381,7 +554,58 @@ export const PyqLibrary: React.FC<PyqLibraryProps> = ({
     setSelectedDifficulty('all');
     setSelectedStatus('all');
     setSortBy('year-desc');
-    setVisibleCount(PAGE_SIZE);
+    resetPagination();
+  };
+
+  const handleLaunchPastPaperMock = async () => {
+    setLaunchingMock(true);
+    try {
+      const tierParam = selectedTier === 'all' ? 'Tier 1' : selectedTier;
+      let mockQs: Question[] = [];
+      try {
+        const params = new URLSearchParams({
+          year: selectedYear,
+          tier: tierParam,
+          subject: selectedSubject,
+          limit: '25',
+        });
+        const res = await fetch(`/api/pyq/mock-set?${params.toString()}`);
+        if (res.ok) {
+          const data = (await res.json()) as { questions?: Question[] };
+          if (Array.isArray(data.questions)) {
+            mockQs = data.questions;
+          }
+        }
+      } catch {
+        // Fallback to local pool below
+      }
+      if (mockQs.length === 0) {
+        mockQs = filteredQuestions.slice(0, 25);
+      }
+      if (mockQs.length === 0) {
+        return;
+      }
+      const marksPerQ = tierParam === 'Tier 2' ? 3 : 2;
+      const negPerQ = tierParam === 'Tier 2' ? 1 : 0.5;
+      const yrLabel = selectedYear === 'all' ? '2016–2026' : selectedYear;
+      const subIds = Array.from(new Set(mockQs.map((q) => q.subject))) as SubjectId[];
+      const test: MockTestConfig = {
+        id: `pyp-mock-${yrLabel}-${tierParam.toLowerCase().replace(/\s+/g, '')}-${selectedSubject}`,
+        title: `SSC CGL ${yrLabel} ${tierParam} Past Paper Mock`,
+        category: tierParam,
+        subjectIds: subIds.length > 0 ? subIds : ['quant', 'reasoning', 'english', 'ga'],
+        durationMinutes: Math.max(10, Math.round(mockQs.length * 0.9)),
+        totalMarks: mockQs.length * marksPerQ,
+        marksPerCorrect: marksPerQ,
+        negativeMarking: negPerQ,
+        questionIds: mockQs.map((q) => q.id),
+        description: `Timed past-paper test drawn from SSC CGL ${yrLabel} ${tierParam} archive (${mockQs.length} verified questions).`,
+        isPublished: true,
+      };
+      setActiveMock({ test, questions: mockQs });
+    } finally {
+      setLaunchingMock(false);
+    }
   };
 
   const hasActiveFilters =
@@ -395,6 +619,16 @@ export const PyqLibrary: React.FC<PyqLibraryProps> = ({
     selectedShift !== 'all' ||
     selectedDifficulty !== 'all' ||
     selectedStatus !== 'all';
+
+  if (activeMock) {
+    return (
+      <MockTestEngine
+        test={activeMock.test}
+        customQuestions={activeMock.questions}
+        onExit={() => setActiveMock(null)}
+      />
+    );
+  }
 
   // =========================================================================
   // 4. QUESTION DETAIL SCREEN (Full View with Prev/Next Navigation)
@@ -755,15 +989,15 @@ export const PyqLibrary: React.FC<PyqLibraryProps> = ({
   }
 
   // =========================================================================
-  // MAIN 10-YEAR PYQ LIBRARY LIST SCREEN (2016–2025)
+  // MAIN 11-YEAR PYQ LIBRARY LIST SCREEN (2016–2026)
   // =========================================================================
   return (
     <div className="space-y-6">
       {!embedded && (
         <FirstTimeTip
           storageKey="pyq_library_v1"
-          title="10-Year SSC CGL Question & Answer Library (2016–2025)"
-          body="Browse all available SSC CGL questions freely in Study Mode with View Answer, Step-by-Step solutions & Shortcut Methods, or switch to Practice Mode to test yourself and build your Revision List."
+          title="11-Year SSC CGL Question & Answer Library (2016–2026)"
+          body="Browse all available SSC CGL questions freely in Study Mode with View Answer, Step-by-Step solutions & Shortcut Methods, or switch to Practice Mode / Launch a Past Paper Mock."
         />
       )}
 
@@ -782,39 +1016,53 @@ export const PyqLibrary: React.FC<PyqLibraryProps> = ({
             )}
             <h1 className="font-display text-xl sm:text-2xl font-extrabold tracking-tight flex items-center gap-2.5">
               <BookOpen className="w-6 h-6 text-[#20C7C9] shrink-0" />
-              <span>Previous Year Questions (2016–2025)</span>
+              <span>Previous Year Questions (2016–2026)</span>
             </h1>
             <p className="text-xs sm:text-sm text-[#073B50]/80 dark:text-[#8DE1D3]">
-              Complete open-access SSC CGL Tier 1 &amp; Tier 2 question and answer archive. Read freely in Study Mode or test accuracy in Practice Mode.
+              Complete open-access SSC CGL Tier 1 &amp; Tier 2 question and answer archive across 11 exam cycles. Read freely in Study Mode or launch a timed past-paper mock.
             </p>
           </div>
 
-          {/* Study Mode vs Practice Mode Switch */}
-          <div className="flex items-center gap-1.5 p-1.5 rounded-2xl bg-[#F3FAFA] dark:bg-[#062B3D] border border-[#8DE1D3]/50 dark:border-[#20C7C9]/25">
+          <div className="flex flex-wrap items-center gap-2.5">
             <button
               type="button"
-              onClick={() => setStudyMode('study')}
-              className={`min-h-[40px] inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap cursor-pointer transition-colors ${
-                studyMode === 'study'
-                  ? 'bg-[#075985] text-white dark:bg-[#20C7C9] dark:text-[#062B3D] shadow-sm'
-                  : 'text-[#073B50] dark:text-[#8DE1D3]'
-              }`}
+              disabled={launchingMock}
+              onClick={handleLaunchPastPaperMock}
+              className="min-h-[42px] inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-[#FF8B78] hover:bg-[#ff7862] text-[#062B3D] text-xs font-extrabold shadow-sm cursor-pointer disabled:opacity-60"
             >
-              <Eye className="w-3.5 h-3.5" />
-              Study Mode
+              <Play className="w-3.5 h-3.5 fill-current" />
+              {launchingMock
+                ? 'Loading Paper...'
+                : `Practice ${selectedYear === 'all' ? '2016–2026' : selectedYear} Mock (25Q)`}
             </button>
-            <button
-              type="button"
-              onClick={() => setStudyMode('practice')}
-              className={`min-h-[40px] inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap cursor-pointer transition-colors ${
-                studyMode === 'practice'
-                  ? 'bg-[#075985] text-white dark:bg-[#20C7C9] dark:text-[#062B3D] shadow-sm'
-                  : 'text-[#073B50] dark:text-[#8DE1D3]'
-              }`}
-            >
-              <Target className="w-3.5 h-3.5" />
-              Practice Mode
-            </button>
+
+            {/* Study Mode vs Practice Mode Switch */}
+            <div className="flex items-center gap-1.5 p-1.5 rounded-2xl bg-[#F3FAFA] dark:bg-[#062B3D] border border-[#8DE1D3]/50 dark:border-[#20C7C9]/25">
+              <button
+                type="button"
+                onClick={() => setStudyMode('study')}
+                className={`min-h-[40px] inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap cursor-pointer transition-colors ${
+                  studyMode === 'study'
+                    ? 'bg-[#075985] text-white dark:bg-[#20C7C9] dark:text-[#062B3D] shadow-sm'
+                    : 'text-[#073B50] dark:text-[#8DE1D3]'
+                }`}
+              >
+                <Eye className="w-3.5 h-3.5" />
+                Study Mode
+              </button>
+              <button
+                type="button"
+                onClick={() => setStudyMode('practice')}
+                className={`min-h-[40px] inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap cursor-pointer transition-colors ${
+                  studyMode === 'practice'
+                    ? 'bg-[#075985] text-white dark:bg-[#20C7C9] dark:text-[#062B3D] shadow-sm'
+                    : 'text-[#073B50] dark:text-[#8DE1D3]'
+                }`}
+              >
+                <Target className="w-3.5 h-3.5" />
+                Practice Mode
+              </button>
+            </div>
           </div>
         </div>
 
@@ -912,17 +1160,17 @@ export const PyqLibrary: React.FC<PyqLibraryProps> = ({
           </div>
         )}
 
-        {/* Quick 10-Year Strip (2016–2025) */}
+        {/* Quick 11-Year Strip (2016–2026) */}
         <div className="space-y-2">
           <div className="text-[11px] font-bold text-[#075985] dark:text-[#8DE1D3]">
-            Browse by Exam Year (2016–2025)
+            Browse by Exam Year (2016–2026)
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={() => {
                 setSelectedYear('all');
-                setVisibleCount(PAGE_SIZE);
+                resetPagination();
               }}
               className={`min-h-[38px] px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors cursor-pointer ${
                 selectedYear === 'all'
@@ -930,9 +1178,12 @@ export const PyqLibrary: React.FC<PyqLibraryProps> = ({
                   : 'border-[#8DE1D3]/50 dark:border-[#20C7C9]/25 bg-white/80 dark:bg-[#062B3D]/60'
               }`}
             >
-              All Years <span className="font-mono-num opacity-80">({libraryStats.total})</span>
+              All Years{' '}
+              <span className="font-mono-num opacity-80">
+                ({libraryStats.total.toLocaleString()})
+              </span>
             </button>
-            {YEARS_2016_2025.map((y) => {
+            {YEARS_2016_2026.map((y) => {
               const count = libraryStats.byYear[y] || 0;
               const active = selectedYear === String(y);
               return (
@@ -941,7 +1192,7 @@ export const PyqLibrary: React.FC<PyqLibraryProps> = ({
                   type="button"
                   onClick={() => {
                     setSelectedYear(String(y));
-                    setVisibleCount(PAGE_SIZE);
+                    resetPagination();
                   }}
                   className={`min-h-[38px] px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors cursor-pointer ${
                     active
@@ -952,7 +1203,7 @@ export const PyqLibrary: React.FC<PyqLibraryProps> = ({
                   }`}
                 >
                   <span className="font-mono-num">{y}</span>{' '}
-                  <span className="font-mono-num opacity-75">({count})</span>
+                  <span className="font-mono-num opacity-75">({count.toLocaleString()})</span>
                 </button>
               );
             })}
@@ -962,19 +1213,37 @@ export const PyqLibrary: React.FC<PyqLibraryProps> = ({
         {/* Revision & Bookmark Scope Tabs */}
         <div className="flex flex-wrap items-center gap-2 pt-1">
           {[
-            { id: 'all' as CollectionScope, label: `All Questions (${libraryStats.total})` },
-            { id: 'bookmarked' as CollectionScope, label: `Bookmarked (${libraryStats.bookmarkedQCount})` },
-            { id: 'difficult' as CollectionScope, label: `Difficult (${difficultQuestionIds.length})` },
-            { id: 'revision' as CollectionScope, label: `Revision List (${revisionListIds.length})` },
-            { id: 'attempted' as CollectionScope, label: `Attempted (${libraryStats.attemptedCount})` },
-            { id: 'incorrect' as CollectionScope, label: `Incorrect (${libraryStats.incorrectCount})` },
+            {
+              id: 'all' as CollectionScope,
+              label: `All Questions (${libraryStats.total.toLocaleString()})`,
+            },
+            {
+              id: 'bookmarked' as CollectionScope,
+              label: `Bookmarked (${libraryStats.bookmarkedQCount})`,
+            },
+            {
+              id: 'difficult' as CollectionScope,
+              label: `Difficult (${difficultQuestionIds.length})`,
+            },
+            {
+              id: 'revision' as CollectionScope,
+              label: `Revision List (${revisionListIds.length})`,
+            },
+            {
+              id: 'attempted' as CollectionScope,
+              label: `Attempted (${libraryStats.attemptedCount})`,
+            },
+            {
+              id: 'incorrect' as CollectionScope,
+              label: `Incorrect (${libraryStats.incorrectCount})`,
+            },
           ].map((tab) => (
             <button
               key={tab.id}
               type="button"
               onClick={() => {
                 setScope(tab.id);
-                setVisibleCount(PAGE_SIZE);
+                resetPagination();
               }}
               className={`min-h-[38px] px-3.5 py-1.5 rounded-xl text-xs font-bold border transition-colors cursor-pointer ${
                 scope === tab.id
@@ -998,7 +1267,7 @@ export const PyqLibrary: React.FC<PyqLibraryProps> = ({
               value={searchQuery}
               onChange={(e) => {
                 setSearchQuery(e.target.value);
-                setVisibleCount(PAGE_SIZE);
+                resetPagination();
               }}
               placeholder="Search questions by keyword, topic, formula, shift, or question number..."
               aria-label="Search previous year questions"
@@ -1008,7 +1277,10 @@ export const PyqLibrary: React.FC<PyqLibraryProps> = ({
 
           <select
             value={sortBy}
-            onChange={(e) => setSortBy(e.target.value as SortOption)}
+            onChange={(e) => {
+              setSortBy(e.target.value as SortOption);
+              resetPagination();
+            }}
             aria-label="Sort questions"
             className="min-h-[44px] rounded-xl border border-[#8DE1D3]/60 dark:border-[#20C7C9]/30 bg-white dark:bg-[#062B3D] px-3 py-2 text-xs font-bold"
           >
@@ -1047,7 +1319,7 @@ export const PyqLibrary: React.FC<PyqLibraryProps> = ({
               onClick={() => {
                 setSelectedSubject(sub);
                 setSelectedTopic('all');
-                setVisibleCount(PAGE_SIZE);
+                resetPagination();
               }}
               className={`min-h-[38px] px-3.5 py-1.5 rounded-xl text-xs font-semibold border transition-colors cursor-pointer ${
                 selectedSubject === sub
@@ -1056,8 +1328,8 @@ export const PyqLibrary: React.FC<PyqLibraryProps> = ({
               }`}
             >
               {sub === 'all'
-                ? `All Subjects (${libraryStats.total})`
-                : `${SUBJECT_NAMES[sub][language]} (${libraryStats.bySubject[sub] || 0})`}
+                ? `All Subjects (${libraryStats.total.toLocaleString()})`
+                : `${SUBJECT_NAMES[sub][language]} (${(libraryStats.bySubject[sub] || 0).toLocaleString()})`}
             </button>
           ))}
         </div>
@@ -1067,7 +1339,10 @@ export const PyqLibrary: React.FC<PyqLibraryProps> = ({
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-2.5 pt-2 border-t border-[#8DE1D3]/35 dark:border-[#20C7C9]/20">
             <select
               value={selectedTier}
-              onChange={(e) => setSelectedTier(e.target.value as typeof selectedTier)}
+              onChange={(e) => {
+                setSelectedTier(e.target.value as typeof selectedTier);
+                resetPagination();
+              }}
               aria-label="Filter by Tier"
               className="min-h-[40px] rounded-xl border border-[#8DE1D3]/60 dark:border-[#20C7C9]/30 bg-white dark:bg-[#062B3D] px-3 py-2 text-xs font-semibold"
             >
@@ -1078,7 +1353,10 @@ export const PyqLibrary: React.FC<PyqLibraryProps> = ({
 
             <select
               value={selectedTopic}
-              onChange={(e) => setSelectedTopic(e.target.value)}
+              onChange={(e) => {
+                setSelectedTopic(e.target.value);
+                resetPagination();
+              }}
               aria-label="Filter by Topic"
               className="min-h-[40px] rounded-xl border border-[#8DE1D3]/60 dark:border-[#20C7C9]/30 bg-white dark:bg-[#062B3D] px-3 py-2 text-xs font-semibold"
             >
@@ -1092,7 +1370,10 @@ export const PyqLibrary: React.FC<PyqLibraryProps> = ({
 
             <select
               value={selectedExamDate}
-              onChange={(e) => setSelectedExamDate(e.target.value)}
+              onChange={(e) => {
+                setSelectedExamDate(e.target.value);
+                resetPagination();
+              }}
               aria-label="Filter by Exam Date"
               className="min-h-[40px] rounded-xl border border-[#8DE1D3]/60 dark:border-[#20C7C9]/30 bg-white dark:bg-[#062B3D] px-3 py-2 text-xs font-semibold"
             >
@@ -1106,7 +1387,10 @@ export const PyqLibrary: React.FC<PyqLibraryProps> = ({
 
             <select
               value={selectedShift}
-              onChange={(e) => setSelectedShift(e.target.value)}
+              onChange={(e) => {
+                setSelectedShift(e.target.value);
+                resetPagination();
+              }}
               aria-label="Filter by Shift"
               className="min-h-[40px] rounded-xl border border-[#8DE1D3]/60 dark:border-[#20C7C9]/30 bg-white dark:bg-[#062B3D] px-3 py-2 text-xs font-semibold"
             >
@@ -1120,9 +1404,10 @@ export const PyqLibrary: React.FC<PyqLibraryProps> = ({
 
             <select
               value={selectedDifficulty}
-              onChange={(e) =>
-                setSelectedDifficulty(e.target.value as typeof selectedDifficulty)
-              }
+              onChange={(e) => {
+                setSelectedDifficulty(e.target.value as typeof selectedDifficulty);
+                resetPagination();
+              }}
               aria-label="Filter by Difficulty"
               className="min-h-[40px] rounded-xl border border-[#8DE1D3]/60 dark:border-[#20C7C9]/30 bg-white dark:bg-[#062B3D] px-3 py-2 text-xs font-semibold"
             >
@@ -1134,7 +1419,10 @@ export const PyqLibrary: React.FC<PyqLibraryProps> = ({
 
             <select
               value={selectedStatus}
-              onChange={(e) => setSelectedStatus(e.target.value as typeof selectedStatus)}
+              onChange={(e) => {
+                setSelectedStatus(e.target.value as typeof selectedStatus);
+                resetPagination();
+              }}
               aria-label="Filter by Answer Status"
               className="min-h-[40px] rounded-xl border border-[#8DE1D3]/60 dark:border-[#20C7C9]/30 bg-white dark:bg-[#062B3D] px-3 py-2 text-xs font-semibold"
             >
@@ -1148,8 +1436,9 @@ export const PyqLibrary: React.FC<PyqLibraryProps> = ({
 
         <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-[#075985] dark:text-[#8DE1D3]">
           <span className="font-mono-num font-semibold">
-            Showing {displayedQuestions.length} of {filteredQuestions.length} matching questions
-            {loadingQuestions ? ' · Syncing archive...' : ''}
+            Showing {displayedQuestions.length.toLocaleString()} of{' '}
+            {totalMatchingCount.toLocaleString()} matching questions
+            {loadingQuestions || loadingArchive ? ' · Loading archive...' : ''}
           </span>
           <span>
             {studyMode === 'study'
@@ -1160,7 +1449,7 @@ export const PyqLibrary: React.FC<PyqLibraryProps> = ({
       </OceanGlassCard>
 
       {/* Question List Cards */}
-      {filteredQuestions.length === 0 ? (
+      {totalMatchingCount === 0 && !loadingArchive ? (
         <OceanGlassCard className="p-8 text-center space-y-3">
           <div className="font-display text-base font-bold">
             No Questions Found for Current Filters
@@ -1391,22 +1680,33 @@ export const PyqLibrary: React.FC<PyqLibraryProps> = ({
           })}
 
           {/* Unbounded Pagination Controls */}
-          {displayedQuestions.length < filteredQuestions.length && (
+          {displayedQuestions.length < totalMatchingCount && (
             <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
               <button
                 type="button"
-                onClick={() => setVisibleCount((c) => c + PAGE_SIZE)}
-                className="min-h-[44px] px-5 py-2.5 rounded-xl bg-[#075985] dark:bg-[#20C7C9] text-white dark:text-[#062B3D] text-xs font-extrabold cursor-pointer"
+                disabled={loadingArchive}
+                onClick={() => {
+                  if (usingServerPagination) {
+                    setServerPage((p) => p + 1);
+                  } else {
+                    setVisibleCount((c) => c + PAGE_SIZE);
+                  }
+                }}
+                className="min-h-[44px] px-5 py-2.5 rounded-xl bg-[#075985] dark:bg-[#20C7C9] text-white dark:text-[#062B3D] text-xs font-extrabold cursor-pointer disabled:opacity-60"
               >
-                Load More ({filteredQuestions.length - displayedQuestions.length} remaining)
+                {loadingArchive
+                  ? 'Loading more...'
+                  : `Load More (${(totalMatchingCount - displayedQuestions.length).toLocaleString()} remaining)`}
               </button>
-              <button
-                type="button"
-                onClick={() => setVisibleCount(filteredQuestions.length)}
-                className="min-h-[44px] px-4 py-2.5 rounded-xl border border-[#8DE1D3]/60 dark:border-[#20C7C9]/30 text-xs font-bold cursor-pointer"
-              >
-                Show All {filteredQuestions.length} Questions
-              </button>
+              {!usingServerPagination && (
+                <button
+                  type="button"
+                  onClick={() => setVisibleCount(filteredQuestions.length)}
+                  className="min-h-[44px] px-4 py-2.5 rounded-xl border border-[#8DE1D3]/60 dark:border-[#20C7C9]/30 text-xs font-bold cursor-pointer"
+                >
+                  Show All {filteredQuestions.length} Questions
+                </button>
+              )}
             </div>
           )}
         </div>

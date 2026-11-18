@@ -201,7 +201,7 @@ export const AdminPredictorControl: React.FC<{
             Review AI Expected Questions, Manage Topic Categories &amp; Track Accuracy
           </h2>
           <p className="text-xs text-[#8DE1D3]">
-            Verified 2016–2025 PYQs in archive:{' '}
+            Archived 2016–2026 PYQs in library:{' '}
             <span className="font-mono-num font-bold text-white">
               {historical.totalVerifiedPyqs}
             </span>{' '}

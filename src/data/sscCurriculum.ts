@@ -8,6 +8,8 @@ import {
   SubjectId,
   VideoLesson,
 } from '../types/examverse';
+import { PAST_PAPERS_2016_2025 } from './pastPapers2016_2025';
+import { PAST_PAPERS_2026 } from './pastPapers2026';
 
 export const SUBJECTS_SEED: SubjectDef[] = [
   {
@@ -328,7 +330,7 @@ export const BADGES: BadgeDef[] = [
   },
 ];
 
-export const QUESTIONS_BANK: Question[] = [
+const CORE_QUESTIONS_BANK: Question[] = [
   {
     id: 'q-quant-1',
     questionNumber: 1,
@@ -1278,6 +1280,14 @@ export const QUESTIONS_BANK: Question[] = [
   },
 ];
 
+export const QUESTIONS_BANK: Question[] = (() => {
+  const dedup = new Map<string, Question>();
+  [...CORE_QUESTIONS_BANK, ...PAST_PAPERS_2016_2025, ...PAST_PAPERS_2026].forEach((q) => {
+    dedup.set(q.id, { ...q, isPublished: q.isPublished !== false });
+  });
+  return Array.from(dedup.values());
+})();
+
 export const VIDEO_LESSONS: VideoLesson[] = [
   {
     id: 'vid-quant-pct',
@@ -1659,6 +1669,70 @@ export const MOCK_TESTS: MockTestConfig[] = [
       'CGL24-T1-240924-S2-GI-B001-Q07',
     ],
     description: 'Archived 24 Sep 2024 Shift-2 General Intelligence & Reasoning PYQs with source attribution.',
+  },
+  {
+    id: 'mock-pyp-2026-tier1',
+    title: 'SSC CGL 2026 Tier 1 Memory-Based PYP Set (20Q)',
+    category: 'Previous Year Paper',
+    durationMinutes: 15,
+    totalMarks: 40,
+    marksPerCorrect: 2,
+    negativeMarking: 0.5,
+    isPublished: true,
+    questionIds: [
+      'CGL26-T1-QA-01',
+      'CGL26-T1-QA-02',
+      'CGL26-T1-QA-03',
+      'CGL26-T1-QA-04',
+      'CGL26-T1-QA-05',
+      'CGL26-T1-GI-01',
+      'CGL26-T1-GI-02',
+      'CGL26-T1-GI-03',
+      'CGL26-T1-GI-04',
+      'CGL26-T1-GI-05',
+      'CGL26-T1-EN-01',
+      'CGL26-T1-EN-02',
+      'CGL26-T1-EN-03',
+      'CGL26-T1-EN-04',
+      'CGL26-T1-EN-05',
+      'CGL26-T1-GA-01',
+      'CGL26-T1-GA-02',
+      'CGL26-T1-GA-03',
+      'CGL26-T1-GA-04',
+      'CGL26-T1-GA-05',
+    ],
+    description:
+      'Balanced 20-question drill from the Sept–Oct 2026 SSC CGL Tier 1 archive with step-by-step solutions (+2 / -0.50).',
+  },
+  {
+    id: 'mock-pyp-2025-tier1',
+    title: 'SSC CGL 2025 Tier 1 Verified PYP Set (16Q)',
+    category: 'Previous Year Paper',
+    durationMinutes: 15,
+    totalMarks: 32,
+    marksPerCorrect: 2,
+    negativeMarking: 0.5,
+    isPublished: true,
+    questionIds: PAST_PAPERS_2016_2025.filter((q) => q.year === 2025)
+      .slice(0, 16)
+      .map((q) => q.id),
+    description: 'Official SSC CGL 2025 Tier 1 verified questions across Quant, Reasoning, English, and GA.',
+  },
+  {
+    id: 'mock-pyp-2016-2020-classic',
+    title: 'SSC CGL 2016–2020 Classic Archive Set (20Q)',
+    category: 'Previous Year Paper',
+    durationMinutes: 18,
+    totalMarks: 40,
+    marksPerCorrect: 2,
+    negativeMarking: 0.5,
+    isPublished: true,
+    questionIds: [2016, 2017, 2018, 2019, 2020].flatMap((yr) =>
+      PAST_PAPERS_2016_2025.filter((q) => q.year === yr)
+        .slice(0, 4)
+        .map((q) => q.id)
+    ),
+    description: 'Curated 4-question-per-year mixed drill spanning SSC CGL 2016 to 2020 official key archives.',
   },
 ];
 

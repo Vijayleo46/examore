@@ -130,7 +130,7 @@ export const PracticeCenter: React.FC<PracticeCenterProps> = ({
       <FirstTimeTip
         storageKey="practice_center_v1"
         title="Practice One Question at a Time"
-        body="Tap Topic Practice for calm single-question drills with instant explanations, browse Previous Year Questions (2016–2025), or play timed Learning Games."
+        body="Tap Topic Practice for calm single-question drills with instant explanations, browse Previous Year Questions (2016–2026), or play timed Learning Games."
       />
 
       {/* Practice Mode Switcher */}
@@ -338,7 +338,7 @@ export const PracticeCenter: React.FC<PracticeCenterProps> = ({
         </div>
       )}
 
-      {/* 2. PREVIOUS YEAR QUESTIONS (FULL 2016-2025 LIBRARY) */}
+      {/* 2. PREVIOUS YEAR QUESTIONS (FULL 2016-2026 LIBRARY) */}
       {subView === 'pyqs' && <PyqLibrary embedded />}
 
       {/* 3. LEARNING GAMES */}

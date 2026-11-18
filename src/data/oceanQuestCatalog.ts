@@ -127,7 +127,7 @@ export const OCEAN_LOCATIONS: OceanQuestLocation[] = [
     depthMeters: 1850,
     subtitle: 'Sanctum Vault · Mixed PYQ Gauntlet',
     description:
-      'Unlock the temple seals using hard 2016–2025 PYQs under official exam pacing.',
+      'Unlock the temple seals using hard 2016–2026 PYQs under official exam pacing.',
     accentHex: '#F59E0B',
     mapX: 53,
     mapY: 78,
@@ -496,7 +496,7 @@ export const OCEAN_MISSIONS_SEED: OceanQuestMission[] = [
     locationId: 'ancient-ocean-temple',
     locationOrder: 8,
     title: 'Sanctum PYQ Relic Trial',
-    description: 'Unlock 3 temple seals using real 2016–2025 SSC CGL mixed PYQs.',
+    description: 'Unlock 3 temple seals using real 2016–2026 SSC CGL mixed PYQs.',
     mode: 'treasure-hunt',
     difficulty: 'advanced',
     subject: 'mixed',

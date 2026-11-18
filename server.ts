@@ -6,6 +6,8 @@ import dotenv from 'dotenv';
 import { GoogleGenAI, ThinkingLevel, Type } from '@google/genai';
 
 import { OCEAN_MISSIONS_SEED } from './src/data/oceanQuestCatalog';
+import { PAST_PAPERS_2026 } from './src/data/pastPapers2026';
+import type { AnswerVerificationStatus, Question, SubjectId } from './src/types/examverse';
 
 dotenv.config();
 
@@ -87,6 +89,189 @@ const LANGUAGE_NAMES: Record<string, string> = {
   hi: 'Hindi (use clear natural Devanagari Hindi with standard SSC terminology)',
   ta: 'Tamil (use clear natural Tamil script with standard SSC terminology)',
 };
+
+interface PyqArchiveCache {
+  questions: Question[];
+  byId: Map<string, Question>;
+  summary: {
+    total: number;
+    byYear: Record<number, number>;
+    bySubject: Record<SubjectId, number>;
+    tier1Count: number;
+    tier2Count: number;
+    officialCount: number;
+    unofficialCount: number;
+    needsVerificationCount: number;
+    topicsBySubject: Record<string, string[]>;
+    examDates: string[];
+    shifts: string[];
+  };
+}
+
+let pyqArchiveCache: PyqArchiveCache | null = null;
+
+function mapArchiveSubject(rawSubject: string): SubjectId {
+  const low = String(rawSubject || '').toLowerCase();
+  if (low.includes('quant') || low.includes('stat')) return 'quant';
+  if (low.includes('reason') || low.includes('intelligence')) return 'reasoning';
+  if (low.includes('english')) return 'english';
+  if (low.includes('computer')) return 'computer';
+  return 'ga';
+}
+
+function getPyqArchive(): PyqArchiveCache {
+  if (pyqArchiveCache) return pyqArchiveCache;
+
+  const byId = new Map<string, Question>();
+  const archiveFile = path.resolve(__dirname, 'exports', 'SSC_CGL_2016_2025_Examora_Firestore.json');
+  const letterIdx: Record<string, number> = { A: 0, B: 1, C: 2, D: 3 };
+
+  if (fs.existsSync(archiveFile)) {
+    try {
+      const rawArr = JSON.parse(fs.readFileSync(archiveFile, 'utf8')) as Array<Record<string, unknown>>;
+      if (Array.isArray(rawArr)) {
+        rawArr.forEach((raw, i) => {
+          const qText = String(raw.question || '').trim();
+          const optsObj = (raw.options || {}) as Record<string, unknown>;
+          const optA = String(optsObj.A || 'Option A');
+          const optB = String(optsObj.B || 'Option B');
+          const optC = String(optsObj.C || 'Option C');
+          const optD = String(optsObj.D || 'Option D');
+          if (!qText) return;
+
+          const ansLetter = String(raw.correctAnswer || '').trim().toUpperCase();
+          const hasValidAns = ansLetter in letterIdx;
+          const isVerifiedRaw = String(raw.verificationStatus || '').toLowerCase() === 'verified';
+          const answerStatus: AnswerVerificationStatus =
+            hasValidAns && isVerifiedRaw ? 'official' : 'needs_verification';
+          const correctIndex = hasValidAns ? letterIdx[ansLetter] : 0;
+          const year = Number(raw.year || 2024);
+          const tier = raw.tier === 'Tier 2' ? 'Tier 2' : 'Tier 1';
+          const subject = mapArchiveSubject(String(raw.subject || ''));
+          const exp = String(
+            raw.explanation ||
+              (hasValidAns
+                ? `Official SSC CGL ${year} ${tier} archived key identifies Option ${ansLetter} as correct.`
+                : 'Requires key verification against official response sheet.')
+          ).trim();
+
+          const q: Question = {
+            id: String(raw.id || `archive-${year}-${i}`),
+            questionNumber: i + 1,
+            subject,
+            topic: String(raw.topic || 'General').trim(),
+            year,
+            examDate: raw.date ? String(raw.date) : undefined,
+            shift: `${tier} · ${String(raw.shift || 'Shift 1')}`,
+            tier,
+            difficulty:
+              raw.difficulty === 'Easy' || raw.difficulty === 'Hard' ? raw.difficulty : 'Medium',
+            sourceType: 'PYQ',
+            sourceLabel: `SSC CGL ${year} ${tier} Archive`,
+            answerStatus,
+            isVerified: answerStatus === 'official',
+            isPublished: true,
+            sourceUrls: raw.sourceUrl ? [String(raw.sourceUrl)] : undefined,
+            questionEn: qText,
+            questionHi: String(raw.language || '').toLowerCase() === 'hindi' ? qText : undefined,
+            optionsEn: [optA, optB, optC, optD],
+            correctIndex,
+            explanations: {
+              en: exp,
+              ml: exp,
+              hi: exp,
+              ta: exp,
+            },
+            stepByStep: [
+              `SSC CGL ${year} (${tier}${raw.date ? ` · ${String(raw.date)}` : ''})`,
+              `Topic: ${String(raw.topic || 'General')}`,
+              hasValidAns
+                ? `Answer Key: Option ${ansLetter}`
+                : 'Answer Status: Pending verification',
+            ],
+          };
+          byId.set(q.id, q);
+        });
+      }
+    } catch (err) {
+      console.warn('Unable to load exports JSON archive:', err);
+    }
+  }
+
+  for (const q26 of PAST_PAPERS_2026) {
+    byId.set(q26.id, { ...q26, isPublished: true });
+  }
+
+  const questions = Array.from(byId.values()).sort(
+    (a, b) => b.year - a.year || (a.questionNumber || 0) - (b.questionNumber || 0)
+  );
+
+  const byYear: Record<number, number> = {};
+  for (let y = 2016; y <= 2026; y++) byYear[y] = 0;
+  const bySubject: Record<SubjectId, number> = {
+    quant: 0,
+    reasoning: 0,
+    english: 0,
+    ga: 0,
+    computer: 0,
+  };
+  let tier1Count = 0;
+  let tier2Count = 0;
+  let officialCount = 0;
+  let unofficialCount = 0;
+  let needsVerificationCount = 0;
+  const topicSets: Record<string, Set<string>> = {
+    all: new Set(),
+    quant: new Set(),
+    reasoning: new Set(),
+    english: new Set(),
+    ga: new Set(),
+    computer: new Set(),
+  };
+  const dateSet = new Set<string>();
+  const shiftSet = new Set<string>();
+
+  for (const q of questions) {
+    if (q.year in byYear) byYear[q.year] += 1;
+    else byYear[q.year] = (byYear[q.year] || 0) + 1;
+    bySubject[q.subject] = (bySubject[q.subject] || 0) + 1;
+    if (q.tier === 'Tier 2') tier2Count += 1;
+    else tier1Count += 1;
+    if (q.answerStatus === 'official') officialCount += 1;
+    else if (q.answerStatus === 'unofficial') unofficialCount += 1;
+    else needsVerificationCount += 1;
+    if (q.topic) {
+      topicSets.all.add(q.topic);
+      topicSets[q.subject]?.add(q.topic);
+    }
+    if (q.examDate) dateSet.add(q.examDate);
+    if (q.shift) shiftSet.add(q.shift);
+  }
+
+  const topicsBySubject: Record<string, string[]> = {};
+  for (const [k, s] of Object.entries(topicSets)) {
+    topicsBySubject[k] = Array.from(s).sort((a, b) => a.localeCompare(b));
+  }
+
+  pyqArchiveCache = {
+    questions,
+    byId,
+    summary: {
+      total: questions.length,
+      byYear,
+      bySubject,
+      tier1Count,
+      tier2Count,
+      officialCount,
+      unofficialCount,
+      needsVerificationCount,
+      topicsBySubject,
+      examDates: Array.from(dateSet).sort((a, b) => b.localeCompare(a)),
+      shifts: Array.from(shiftSet).sort((a, b) => a.localeCompare(b)),
+    },
+  };
+  return pyqArchiveCache;
+}
 
 async function startServer() {
   const app = express();
@@ -771,6 +956,120 @@ Respond in ${langDesc} for descriptions while keeping SSC topic names clear. Pro
       console.error('Predictor study plan error:', msg);
       return res.status(500).json({ error: msg.slice(0, 240) });
     }
+  });
+
+  app.get('/api/pyq/summary', (_req, res) => {
+    const archive = getPyqArchive();
+    res.json(archive.summary);
+  });
+
+  app.get('/api/pyq/questions', (req, res) => {
+    const archive = getPyqArchive();
+    const yearParam = String(req.query.year || 'all');
+    const tierParam = String(req.query.tier || 'all');
+    const subjectParam = String(req.query.subject || 'all');
+    const topicParam = String(req.query.topic || 'all');
+    const examDateParam = String(req.query.examDate || 'all');
+    const shiftParam = String(req.query.shift || 'all');
+    const diffParam = String(req.query.difficulty || 'all');
+    const statusParam = String(req.query.answerStatus || 'all');
+    const searchParam = String(req.query.q || '').trim().toLowerCase();
+    const sortParam = String(req.query.sort || 'year-desc');
+    const page = Math.max(1, Number(req.query.page || 1));
+    const limitNum = Math.min(100, Math.max(1, Number(req.query.limit || 20)));
+
+    const filtered = archive.questions.filter((q) => {
+      if (yearParam !== 'all' && String(q.year) !== yearParam) return false;
+      if (tierParam !== 'all' && q.tier !== tierParam) return false;
+      if (subjectParam !== 'all' && q.subject !== subjectParam) return false;
+      if (topicParam !== 'all' && q.topic !== topicParam) return false;
+      if (examDateParam !== 'all' && (q.examDate || '') !== examDateParam) return false;
+      if (shiftParam !== 'all' && q.shift !== shiftParam) return false;
+      if (diffParam !== 'all' && q.difficulty !== diffParam) return false;
+      if (statusParam !== 'all' && (q.answerStatus || 'official') !== statusParam) return false;
+      if (searchParam) {
+        const hay = `${q.questionEn} ${q.topic} ${q.shift} ${q.year} ${q.explanations.en}`.toLowerCase();
+        if (!hay.includes(searchParam)) return false;
+      }
+      return true;
+    });
+
+    const sorted = [...filtered];
+    if (sortParam === 'year-asc') {
+      sorted.sort((a, b) => a.year - b.year || (a.questionNumber || 0) - (b.questionNumber || 0));
+    } else if (sortParam === 'subject') {
+      sorted.sort((a, b) => a.subject.localeCompare(b.subject) || b.year - a.year);
+    } else if (sortParam === 'topic') {
+      sorted.sort((a, b) => a.topic.localeCompare(b.topic) || b.year - a.year);
+    } else {
+      sorted.sort((a, b) => b.year - a.year || (a.questionNumber || 0) - (b.questionNumber || 0));
+    }
+
+    const total = sorted.length;
+    const totalPages = Math.max(1, Math.ceil(total / limitNum));
+    const safePage = Math.min(page, totalPages);
+    const start = (safePage - 1) * limitNum;
+    const items = sorted.slice(start, start + limitNum);
+
+    res.json({
+      items,
+      total,
+      page: safePage,
+      limit: limitNum,
+      totalPages,
+    });
+  });
+
+  app.get('/api/pyq/mock-set', (req, res) => {
+    const archive = getPyqArchive();
+    const yearParam = String(req.query.year || 'all');
+    const tierParam = String(req.query.tier || 'Tier 1');
+    const subjectParam = String(req.query.subject || 'all');
+    const limitNum = Math.min(100, Math.max(5, Number(req.query.limit || 25)));
+
+    const visualSkip = /in the following figure|given figure|shown below|mirror image|paper.*fold|embedded figure/i;
+    const pool = archive.questions.filter((q) => {
+      if (yearParam !== 'all' && String(q.year) !== yearParam) return false;
+      if (tierParam !== 'all' && q.tier !== tierParam) return false;
+      if (subjectParam !== 'all' && q.subject !== subjectParam) return false;
+      if (q.questionHi && q.questionHi === q.questionEn) return false;
+      if (q.answerStatus === 'needs_verification') return false;
+      if (visualSkip.test(q.questionEn)) return false;
+      return true;
+    });
+
+    // Balance across subjects when subject === 'all'
+    if (subjectParam === 'all') {
+      const buckets: Record<SubjectId, Question[]> = {
+        quant: [],
+        reasoning: [],
+        english: [],
+        ga: [],
+        computer: [],
+      };
+      pool.forEach((q) => buckets[q.subject]?.push(q));
+      const picked: Question[] = [];
+      const order: SubjectId[] =
+        tierParam === 'Tier 2'
+          ? ['quant', 'reasoning', 'english', 'ga', 'computer']
+          : ['quant', 'reasoning', 'english', 'ga'];
+      let round = 0;
+      while (picked.length < limitNum && round < 50) {
+        let added = false;
+        for (const s of order) {
+          if (buckets[s].length > 0) {
+            picked.push(buckets[s].shift()!);
+            added = true;
+            if (picked.length >= limitNum) break;
+          }
+        }
+        if (!added) break;
+        round++;
+      }
+      return res.json({ questions: picked });
+    }
+
+    return res.json({ questions: pool.slice(0, limitNum) });
   });
 
   if (process.env.NODE_ENV !== 'production') {

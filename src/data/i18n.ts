@@ -52,6 +52,7 @@ export interface UIStrings {
   navLearn: string;
   navPractice: string;
   navPyqs: string;
+  navRepeats: string;
   navPredictor: string;
   navAnalytics: string;
   navProfile: string;
@@ -102,6 +103,7 @@ export const UI_TEXT: Record<LanguageCode, UIStrings> = {
     navLearn: 'Learn',
     navPractice: 'Practice',
     navPyqs: 'Previous Year Questions',
+    navRepeats: '10-Year Repeats',
     navPredictor: 'Future Exam Predictor',
     navAnalytics: 'Analytics',
     navProfile: 'Profile',
@@ -150,6 +152,7 @@ export const UI_TEXT: Record<LanguageCode, UIStrings> = {
     navLearn: 'പഠനം',
     navPractice: 'പരിശീലനം',
     navPyqs: 'മുൻവർഷ ചോദ്യങ്ങൾ',
+    navRepeats: '10 വർഷ ആവർത്തനങ്ങൾ',
     navPredictor: 'ഭാവി പരീക്ഷ പ്രവചനം',
     navAnalytics: 'വിശകലനം',
     navProfile: 'പ്രൊഫൈൽ',
@@ -198,6 +201,7 @@ export const UI_TEXT: Record<LanguageCode, UIStrings> = {
     navLearn: 'अध्ययन',
     navPractice: 'अभ्यास',
     navPyqs: 'पिछले वर्ष के प्रश्न',
+    navRepeats: '10-वर्षीय दोहराव',
     navPredictor: 'भविष्य परीक्षा पूर्वानुमान',
     navAnalytics: 'विश्लेषण',
     navProfile: 'प्रोफ़ाइल',
@@ -246,6 +250,7 @@ export const UI_TEXT: Record<LanguageCode, UIStrings> = {
     navLearn: 'கற்க',
     navPractice: 'பயிற்சி',
     navPyqs: 'முந்தைய ஆண்டு வினாக்கள்',
+    navRepeats: '10 ஆண்டு வினாக்கள்',
     navPredictor: 'எதிர்காலத் தேர்வு கணிப்பு',
     navAnalytics: 'பகுப்பாய்வு',
     navProfile: 'சுயவிவரம்',

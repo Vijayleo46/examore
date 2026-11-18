@@ -406,7 +406,7 @@ export const FutureExamPredictor: React.FC<FutureExamPredictorProps> = ({
     label: string;
     icon: React.ComponentType<{ className?: string }>;
   }> = [
-    { id: 'overview', label: '2016–2025 Trends', icon: BarChart3 },
+    { id: 'overview', label: '2016–2026 Trends', icon: BarChart3 },
     { id: 'topics', label: 'Topic Predictions', icon: TrendingUp },
     { id: 'expected', label: 'Expected Q&A (AI)', icon: Sparkles },
     { id: 'mock', label: 'Predicted Mock', icon: Play },
@@ -422,7 +422,7 @@ export const FutureExamPredictor: React.FC<FutureExamPredictorProps> = ({
       <FirstTimeTip
         storageKey="future_predictor_v1"
         title="How Future Exam Predictor Works"
-        body="We analyze real verified 2016–2025 SSC CGL questions alongside official syllabus weightage to highlight high-yield preparation topics. Predictions guide focused revision — never a claim of exact future exam papers."
+        body="We analyze real 2016–2026 SSC CGL questions alongside official syllabus weightage to highlight high-yield preparation topics. Predictions guide focused revision — never a claim of exact future exam papers."
       />
 
       {/* Top Back & Home Controls */}
@@ -452,7 +452,7 @@ export const FutureExamPredictor: React.FC<FutureExamPredictorProps> = ({
           className="min-h-[40px] inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#075985] dark:bg-[#20C7C9] text-white dark:text-[#062B3D] text-xs font-bold cursor-pointer"
         >
           <BookOpen className="w-4 h-4" />
-          Browse 2016–2025 PYQs
+          Browse 2016–2026 PYQs
         </button>
       </div>
 
@@ -469,7 +469,7 @@ export const FutureExamPredictor: React.FC<FutureExamPredictorProps> = ({
               SSC CGL {examYear} · {tier} Trend &amp; Preparation Radar
             </h1>
             <p className="text-xs sm:text-sm text-[#F3FAFA]/85 leading-relaxed">
-              Evidence-backed topic prioritization built strictly from verified 2016–2025 PYQ
+              Evidence-backed topic prioritization built strictly from 2016–2026 PYQ
               frequencies, syllabus shift analysis, and curated expected practice.
             </p>
           </div>
@@ -555,7 +555,7 @@ export const FutureExamPredictor: React.FC<FutureExamPredictorProps> = ({
               <span className="font-mono-num font-bold text-[#55D6D0]">
                 {historicalReport.totalVerifiedPyqs}
               </span>{' '}
-              verified 2016–2025 PYQs plus syllabus weightage—not guaranteed exam probabilities.
+              archived 2016–2026 PYQs plus syllabus weightage—not guaranteed exam probabilities.
             </p>
           </div>
         </div>
@@ -591,7 +591,7 @@ export const FutureExamPredictor: React.FC<FutureExamPredictorProps> = ({
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <OceanGlassCard className="p-5">
               <div className="text-xs font-semibold text-[#075985] dark:text-[#8DE1D3]">
-                Verified 2016–2025 PYQs
+                Archived 2016–2026 PYQs
               </div>
               <div className="font-mono-num text-2xl font-extrabold mt-1">
                 {historicalReport.totalVerifiedPyqs}
@@ -606,7 +606,7 @@ export const FutureExamPredictor: React.FC<FutureExamPredictorProps> = ({
                 Years With Imported Data
               </div>
               <div className="font-mono-num text-2xl font-extrabold mt-1">
-                {historicalReport.yearsWithData.length}/10
+                {historicalReport.yearsWithData.length}/11
               </div>
               <div className="text-[11px] text-[#073B50]/75 dark:text-[#8DE1D3]/80 mt-0.5 truncate">
                 {historicalReport.yearsWithData.join(', ') || 'None yet'}
@@ -644,7 +644,7 @@ export const FutureExamPredictor: React.FC<FutureExamPredictorProps> = ({
               <Info className="w-5 h-5 text-[#FF8B78] shrink-0 mt-0.5" />
               <div className="text-xs space-y-1">
                 <div className="font-bold text-[#062B3D] dark:text-[#F3FAFA]">
-                  Transparent Dataset Coverage Notice (2016–2025)
+                  Transparent Dataset Coverage Notice (2016–2026)
                 </div>
                 <p className="text-[#073B50]/85 dark:text-[#8DE1D3]">
                   Counts below reflect only actual verified PYQs currently in Examora. Years with 0
@@ -664,7 +664,7 @@ export const FutureExamPredictor: React.FC<FutureExamPredictorProps> = ({
               <div className="flex items-center justify-between">
                 <h2 className="font-display text-lg font-extrabold flex items-center gap-2">
                   <BarChart3 className="w-5 h-5 text-[#20C7C9]" />
-                  2016–2025 Imported PYQ Volume
+                  2016–2026 Imported PYQ Volume
                 </h2>
                 <span className="text-xs font-semibold text-[#075985] dark:text-[#8DE1D3]">
                   Verified Archive Only
@@ -778,7 +778,7 @@ export const FutureExamPredictor: React.FC<FutureExamPredictorProps> = ({
             <OceanGlassCard className="p-6 space-y-3">
               <h3 className="font-display text-base font-extrabold flex items-center gap-2">
                 <TrendingUp className="w-4 h-4 text-[#20C7C9]" />
-                Recent 2023–2025 Surge &amp; Selective Topics
+                Recent 2023–2026 Surge &amp; Selective Topics
               </h3>
               <div className="divide-y divide-[#8DE1D3]/30 dark:divide-[#20C7C9]/15">
                 {historicalReport.recentSurgeTopics.slice(0, 4).map((stat) => (
@@ -789,7 +789,7 @@ export const FutureExamPredictor: React.FC<FutureExamPredictorProps> = ({
                     <div>
                       <div className="font-bold">{stat.topic}</div>
                       <div className="text-[11px] text-[#075985] dark:text-[#8DE1D3]">
-                        Recent 2023–2025 surge · {SUBJECT_NAMES[stat.subject][language]}
+                        Recent 2023–2026 surge · {SUBJECT_NAMES[stat.subject][language]}
                       </div>
                     </div>
                     <span className="font-mono-num font-extrabold px-2.5 py-1 rounded-lg bg-[#FF8B78]/15 text-[#9A2D1F] dark:text-[#FF8B78]">
@@ -966,7 +966,7 @@ export const FutureExamPredictor: React.FC<FutureExamPredictorProps> = ({
               </div>
               <p className="text-[#073B50] dark:text-[#F3FAFA]/85">
                 Questions generated here are original AI-created exam-style drills inspired by historical
-                SSC CGL patterns. Unreviewed student drafts remain isolated from the Verified 2016–2025
+                SSC CGL patterns. Unreviewed student drafts remain isolated from the Archived 2016–2026
                 PYQ Library until approved by an authorized Administrator.
               </p>
             </div>

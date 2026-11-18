@@ -40,3 +40,4 @@ flutter:
   uses-material-design: true
   assets:
     - assets/images/ocean_sunrays.jpg
+    - assets/data/ssc_cgl_past_papers_2016_2026.json

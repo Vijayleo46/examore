@@ -250,7 +250,7 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
             }`}
           >
             <Library className="w-4 h-4 shrink-0" />
-            <span className="truncate">PYQs (2016–2025)</span>
+            <span className="truncate">PYQs (2016–2026)</span>
           </button>
           <button
             type="button"

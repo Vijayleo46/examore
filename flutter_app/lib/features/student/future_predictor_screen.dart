@@ -5,6 +5,7 @@ import '../../core/theme/app_theme.dart';
 import '../../core/widgets/ocean_components.dart';
 import '../../services/firestore_service.dart';
 import 'future_predictor_data.dart';
+import 'pyq_archive_loader.dart';
 import 'student_mock_runner.dart';
 import 'student_tutor_screen.dart';
 
@@ -68,16 +69,17 @@ class _FuturePredictorScreenState extends State<FuturePredictorScreen> {
 
   Future<void> _loadVerifiedPyqs() async {
     setState(() => _loadingPyqs = true);
+    final bundled = await PyqArchiveLoader.loadBundledPastPapers();
+    List<Map<String, dynamic>> remote = const [];
     try {
-      final list = await widget.firestoreService.fetchAllPublishedQuestionsUnbounded();
-      if (mounted) {
-        setState(() {
-          _pyqQuestions = list;
-          _loadingPyqs = false;
-        });
-      }
-    } catch (_) {
-      if (mounted) setState(() => _loadingPyqs = false);
+      remote = await widget.firestoreService.fetchAllPublishedQuestionsUnbounded();
+    } catch (_) {}
+    final merged = PyqArchiveLoader.mergeWithFirestore(bundled, remote);
+    if (mounted) {
+      setState(() {
+        _pyqQuestions = merged;
+        _loadingPyqs = false;
+      });
     }
   }
 
@@ -203,7 +205,7 @@ class _FuturePredictorScreenState extends State<FuturePredictorScreen> {
           IconButton(
             icon: const Icon(Icons.history_edu_outlined, color: OceanColors.oceanBlue),
             onPressed: widget.onOpenPyqLibrary,
-            tooltip: '2016–2025 PYQ Library',
+            tooltip: '2016–2026 PYQ Library',
           ),
           IconButton(
             icon: const Icon(Icons.home_outlined, color: OceanColors.oceanBlue),
@@ -348,7 +350,7 @@ class _FuturePredictorScreenState extends State<FuturePredictorScreen> {
                               ),
                               const SizedBox(height: 6),
                               const Text(
-                                'Evidence-based preparation tool from verified 2016–2025 PYQs — never claims to know exact future exam questions.',
+                                'Evidence-based preparation tool from 2016–2026 PYQs — never claims to know exact future exam questions.',
                                 style: TextStyle(
                                   color: OceanColors.aqua,
                                   fontSize: 11,
@@ -369,7 +371,7 @@ class _FuturePredictorScreenState extends State<FuturePredictorScreen> {
                     child: Row(
                       children: [
                         for (final entry in const [
-                          (0, '2016–25 Trends'),
+                          (0, '2016–26 Trends'),
                           (1, 'Topic Predictions'),
                           (2, 'Expected Q&A'),
                           (3, 'Predicted Mock'),
@@ -440,7 +442,7 @@ class _FuturePredictorScreenState extends State<FuturePredictorScreen> {
             ),
             _MetricCard(
               label: 'Years Active',
-              value: '${historical.yearsWithData.length}/10',
+              value: '${historical.yearsWithData.length}/11',
               sub: historical.yearsWithData.join(', '),
             ),
             _MetricCard(
@@ -456,7 +458,7 @@ class _FuturePredictorScreenState extends State<FuturePredictorScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
-                '2016–2025 Verified PYQ Volume',
+                '2016–2026 Archived PYQ Volume',
                 style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
               ),
               const SizedBox(height: 14),

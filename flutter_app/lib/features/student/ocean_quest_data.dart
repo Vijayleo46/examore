@@ -290,7 +290,7 @@ const List<OceanLocationDef> kOceanLocations = [
     depthMeters: 1850,
     subtitle: 'Sanctum Vault · Mixed PYQ Gauntlet',
     description:
-        'Unlock the temple seals using hard 2016–2025 PYQs under official exam pacing.',
+        'Unlock the temple seals using hard 2016–2026 PYQs under official exam pacing.',
     accent: Color(0xFFF59E0B),
     mapX: 52,
     mapY: 80,
@@ -621,7 +621,7 @@ const List<Map<String, dynamic>> kOceanMissionsSeed = [
     'locationId': 'ancient-ocean-temple',
     'locationOrder': 8,
     'title': 'Sanctum PYQ Relic Trial',
-    'description': 'Unlock 3 temple seals using real 2016–2025 SSC CGL mixed PYQs.',
+    'description': 'Unlock 3 temple seals using real 2016–2026 SSC CGL mixed PYQs.',
     'mode': 'treasure-hunt',
     'difficulty': 'advanced',
     'subject': 'mixed',

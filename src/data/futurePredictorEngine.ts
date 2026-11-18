@@ -317,12 +317,12 @@ export function getExamYearNotice(examYear: number, tier: ExamTier): ExamYearNot
       notificationStatus: 'tentative',
       examDateLabel:
         tier === 'Tier 1'
-          ? 'Tentative: Official SSC CGL 2026 calendar notification pending confirmation'
+          ? 'Tentative / Reference: Tier 1 memory-based archive (Sept 30 – Oct 30, 2026); await final SSC scorecard'
           : 'Tentative: Official Tier 2 schedule announced after Tier 1 result',
       patternStatus: 'tentative',
       patternSummary:
         tier === 'Tier 1'
-          ? 'Estimated Practice Format (based on latest verified 2022–2025 Tier 1 scheme: 100 Qs · 200 Marks · 60 min · +2/-0.50)'
+          ? 'Latest Observed Format (based on 2022–2026 Tier 1 scheme: 100 Qs · 200 Marks · 60 min · +2/-0.50)'
           : 'Estimated Practice Format (based on latest verified Tier 2 Module scheme: +3/-1 with Computer Knowledge Module II)',
       sourceLabel: 'SSC Official Portal (ssc.gov.in) — Monitor for Official Notification',
       sourceUrl: 'https://ssc.gov.in',
@@ -365,16 +365,16 @@ export function analyzeHistoricalPyqs(
   tierFilter: ExamTier | 'All' = 'All'
 ): HistoricalAnalysisReport {
   const allPyqs = questions.filter(
-    (q) => q.sourceType === 'PYQ' && q.year >= 2016 && q.year <= 2025
+    (q) => q.sourceType === 'PYQ' && q.year >= 2016 && q.year <= 2026
   );
   const scopedPyqs =
     tierFilter === 'All' ? allPyqs : allPyqs.filter((q) => q.tier === tierFilter);
 
   const yearsWithDataSet = new Set<number>();
   allPyqs.forEach((q) => yearsWithDataSet.add(q.year));
-  const all10Years = [2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025];
-  const yearsWithData = all10Years.filter((y) => yearsWithDataSet.has(y));
-  const missingYears = all10Years.filter((y) => !yearsWithDataSet.has(y));
+  const all11Years = [2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026];
+  const yearsWithData = all11Years.filter((y) => yearsWithDataSet.has(y));
+  const missingYears = all11Years.filter((y) => !yearsWithDataSet.has(y));
 
   const subjectCounts: Record<SubjectId, number> = {
     quant: 0,
@@ -390,7 +390,7 @@ export function analyzeHistoricalPyqs(
   };
 
   const yearMap = new Map<number, YearTrendStat>();
-  all10Years.forEach((yr) => {
+  all11Years.forEach((yr) => {
     yearMap.set(yr, {
       year: yr,
       total: 0,
@@ -472,14 +472,14 @@ export function analyzeHistoricalPyqs(
     scopedPyqs.length > 0 ? Math.round((difficultyCounts.Hard / scopedPyqs.length) * 100) : 0;
 
   const tierShiftInsights: string[] = [
-    `Dataset coverage: ${allPyqs.length} verified PYQs across ${yearsWithData.length}/10 years (${
+    `Dataset coverage: ${allPyqs.length} PYQs across ${yearsWithData.length}/11 years (${
       yearsWithData.length > 0 ? yearsWithData.join(', ') : 'none yet'
     }).`,
     `Tier split in imported archive: ${tier1Total} Tier 1 questions vs ${tier2Total} Tier 2 questions.`,
     `Difficulty balance (${tierFilter}): ${difficultyCounts.Easy} Easy, ${difficultyCounts.Medium} Medium, ${difficultyCounts.Hard} Hard (${hardRatio}% Hard).`,
     missingYears.length > 0
       ? `Honesty notice: ${missingYears.length} year(s) (${missingYears.join(', ')}) have 0 imported PYQs yet. Import verified papers in Admin to sharpen multi-year shifts.`
-      : 'Full 2016–2025 year span has verified questions imported.',
+      : 'Full 2016–2026 11-year span has past papers imported.',
   ];
 
   return {
@@ -533,7 +533,7 @@ export function buildTopicPredictions(
           o.targetYear === examYear
       );
 
-      // Evidence-based composite score: historical frequency (50%), recent 2023-2025 momentum (30%), multi-year spread (20%)
+      // Evidence-based composite score: historical frequency (50%), recent 2023-2026 momentum (30%), multi-year spread (20%)
       const freqScore = (freq / maxFreq) * 50;
       const recencyScore = recentCount > 0 ? Math.min(30, recentCount * 10) : allFreq > 0 ? 10 : 5;
       const spreadScore = Math.min(20, (scopedStat?.yearsAppeared.length ?? 0) * 6);
@@ -557,16 +557,16 @@ export function buildTopicPredictions(
 
       const evidenceSummary =
         freq > 0
-          ? `${freq} verified ${tier} PYQ(s) across ${
+          ? `${freq} archived ${tier} PYQ(s) across ${
               scopedStat?.yearsAppeared.join(', ') || 'archived years'
-            }${recentCount > 0 ? ` (${recentCount} in 2023–2025)` : ''}.`
+            }${recentCount > 0 ? ` (${recentCount} in 2023–2026)` : ''}.`
           : allFreq > 0
-          ? `0 ${tier}-tagged PYQs imported yet, but ${allFreq} verified PYQ(s) in cross-tier bank.`
+          ? `0 ${tier}-tagged PYQs imported yet, but ${allFreq} archived PYQ(s) in cross-tier bank.`
           : `0 imported PYQs for this topic so far; retained from official SSC CGL ${tier} syllabus (${def.syllabusWeightageNote}).`;
 
       const rationale =
         freq > 0
-          ? `Supported by imported 2016–2025 evidence (${recentTrendLabel.toLowerCase()} trend) and core ${tier} syllabus weightage.`
+          ? `Supported by imported 2016–2026 evidence (${recentTrendLabel.toLowerCase()} trend) and core ${tier} syllabus weightage.`
           : `Included via official SSC CGL syllabus taxonomy (${def.syllabusWeightageNote}) while awaiting more verified PYQs.`;
 
       return {
@@ -681,7 +681,7 @@ export function buildPredictedMockTest(
     questionIds: chosen.map((q) => q.id),
     description: `${
       isEstimatedFormat ? 'ESTIMATED PRACTICE FORMAT · ' : ''
-    }Weighted by historical 2016–2025 topic frequency & predicted high-priority ${tier} topics. +${marksPerCorrect}/-${negativeMarking} marking.`,
+    }Weighted by historical 2016–2026 topic frequency & predicted high-priority ${tier} topics. +${marksPerCorrect}/-${negativeMarking} marking.`,
     isPublished: true,
   };
 

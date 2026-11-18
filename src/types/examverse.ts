@@ -12,6 +12,7 @@ export type MainTab =
   | 'learn'
   | 'practice'
   | 'pyqs'
+  | 'repeats'
   | 'predictor'
   | 'analytics'
   | 'profile';
@@ -21,6 +22,31 @@ export type LearnSubView = 'videos' | 'syllabus' | 'mock-tests';
 export type PracticeSubView = 'drills' | 'pyqs' | 'games';
 
 export type AnswerVerificationStatus = 'official' | 'unofficial' | 'needs_verification';
+
+export interface RepeatPaperOccurrence {
+  year: number;
+  tier: 'Tier 1' | 'Tier 2';
+  examDate: string;
+  shift: string;
+  paperRef: string;
+  answerStatus: AnswerVerificationStatus;
+  variantNote?: string;
+}
+
+export interface RepeatedQuestionEntry {
+  id: string;
+  subject: SubjectId;
+  topic: string;
+  difficulty: 'Easy' | 'Medium' | 'Hard';
+  questionEn: string;
+  optionsEn: [string, string, string, string];
+  correctIndex: number;
+  correctAnswerText: string;
+  explanationEn: string;
+  shortcutMethod?: string;
+  yearsAppeared: number[];
+  occurrences: RepeatPaperOccurrence[];
+}
 
 export interface NotificationPreferences {
   dailyReminder: boolean;

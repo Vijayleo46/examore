@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/ocean_components.dart';
 import '../../services/firestore_service.dart';
+import 'pyq_archive_loader.dart';
 import 'student_i18n.dart';
 import 'student_tutor_screen.dart';
 import 'pyq_library_screen.dart';
@@ -50,6 +51,17 @@ class _StudentPracticeTabState extends State<StudentPracticeTab> {
   int _sprintCorrect = 0;
   int _sprintAttempted = 0;
   Timer? _sprintTimer;
+  List<Map<String, dynamic>> _bundledArchive = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    PyqArchiveLoader.loadBundledPastPapers().then((list) {
+      if (mounted && list.isNotEmpty) {
+        setState(() => _bundledArchive = list);
+      }
+    });
+  }
 
   @override
   void dispose() {
@@ -121,7 +133,7 @@ class _StudentPracticeTabState extends State<StudentPracticeTab> {
                 OceanFirstTimeTip(
                   title: 'Practice without pressure',
                   message:
-                      'Try Topic Drill to solve one question at a time with instant explanations, or browse 10 years of SSC CGL PYQs.',
+                      'Try Topic Drill to solve one question at a time with instant explanations, or browse 11 years of SSC CGL PYQs (2016–2026).',
                   onDismiss: widget.onDismissTip,
                 ),
               SegmentedButton<_PracticeMode>(
@@ -218,12 +230,23 @@ class _StudentPracticeTabState extends State<StudentPracticeTab> {
                         ),
                       );
                     }
-                    if (!snap.hasData) {
+                    if (!snap.hasData && _bundledArchive.isEmpty) {
                       return const Center(child: CircularProgressIndicator());
                     }
-                    final questions = snap.data!.docs
+                    final remoteQs = (snap.data?.docs ?? [])
                         .map((d) => {'id': d.id, ...d.data()})
                         .toList();
+                    final bundledFiltered = _selectedSubject == 'all'
+                        ? _bundledArchive
+                        : _bundledArchive
+                            .where((q) =>
+                                (q['subject'] ?? '').toString() ==
+                                _selectedSubject)
+                            .toList();
+                    final questions = PyqArchiveLoader.mergeWithFirestore(
+                      bundledFiltered,
+                      remoteQs,
+                    );
                     if (questions.isEmpty) {
                       return const Center(
                         child: Padding(

@@ -52,7 +52,7 @@ class _AuthScreenState extends State<AuthScreen> {
     (
       title: 'Practice Without Stress',
       subtitle:
-          'Solve 10 years of SSC CGL PYQs (2016–2025) and timed mock tests one question at a time with instant explanations.',
+          'Solve 11 years of SSC CGL PYQs (2016–2026) and timed mock tests one question at a time with instant explanations.',
       icon: Icons.quiz_outlined,
     ),
     (
