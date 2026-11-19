@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import {
   Bookmark,
+  Bot,
   CheckCircle2,
   Circle,
   Clock,
@@ -9,7 +10,12 @@ import {
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { SUBJECT_NAMES, UI_TEXT } from '../data/i18n';
-import { SSC_SYLLABUS } from '../data/sscCurriculum';
+import {
+  COMPLETE_SSC_SYLLABUS,
+  SSC_CUTOFF_TRENDS,
+  SSC_TIER1_PATTERN,
+  SSC_TIER2_PATTERN,
+} from '../data/sscMasterTeacher';
 import { LearnSubView, MockTestConfig, SubjectId, VideoLesson } from '../types/examverse';
 import { VideoPlayerModal } from './VideoPlayerModal';
 import { MockTestEngine } from './MockTestEngine';
@@ -34,11 +40,14 @@ export const LearnCenter: React.FC<LearnCenterProps> = ({ subView, setSubView })
     bookmarks,
     toggleBookmark,
     toggleSyllabusTopic,
+    topicMastery,
+    openAiTeacherWithContext,
     isAdmin,
   } = useApp();
 
   const t = UI_TEXT[language];
   const [selectedSubject, setSelectedSubject] = useState<'all' | SubjectId>('all');
+  const [showPatternGuide, setShowPatternGuide] = useState(false);
   const [activeVideo, setActiveVideo] = useState<VideoLesson | null>(null);
   const [activeMock, setActiveMock] = useState<MockTestConfig | null>(null);
 
@@ -52,7 +61,10 @@ export const LearnCenter: React.FC<LearnCenterProps> = ({ subView, setSubView })
   );
 
   const syllabusTopics = useMemo(
-    () => SSC_SYLLABUS.filter((s) => selectedSubject === 'all' || s.subject === selectedSubject),
+    () =>
+      COMPLETE_SSC_SYLLABUS.filter(
+        (s) => selectedSubject === 'all' || s.subject === selectedSubject
+      ),
     [selectedSubject]
   );
 
@@ -78,7 +90,10 @@ export const LearnCenter: React.FC<LearnCenterProps> = ({ subView, setSubView })
     { id: 'mock-tests', label: t.mockTestsTab },
   ];
 
-  const subjects: Array<'all' | SubjectId> = ['all', 'quant', 'reasoning', 'english', 'ga', 'computer'];
+  const subjects: Array<'all' | SubjectId> =
+    subView === 'syllabus'
+      ? ['all', 'quant', 'reasoning', 'english', 'ga', 'computer', 'statistics']
+      : ['all', 'quant', 'reasoning', 'english', 'ga', 'computer'];
 
   return (
     <div className="space-y-6">
@@ -227,40 +242,200 @@ export const LearnCenter: React.FC<LearnCenterProps> = ({ subView, setSubView })
         </div>
       )}
 
-      {/* 2. SYLLABUS TRACKER */}
+      {/* 2. COMPLETE SYLLABUS TRACKER + EXAM PATTERN & CUT-OFF REFERENCE */}
       {subView === 'syllabus' && (
-        <div className="space-y-3">
-          {syllabusTopics.map((topic) => {
-            const done = profile.completedSyllabusTopics.includes(topic.id);
-            return (
-              <OceanGlassCard
-                key={topic.id}
-                className="p-5 flex flex-wrap items-center justify-between gap-4"
-              >
-                <div className="space-y-1.5 min-w-0 flex-1">
-                  <div className="text-xs font-semibold text-[#075985] dark:text-[#55D6D0]">
-                    {SUBJECT_NAMES[topic.subject][language]} · {topic.tier} · Weightage: {topic.weightage}
-                  </div>
-                  <h3 className="font-display font-bold text-base">{topic.title}</h3>
-                  <div className="text-xs text-[#073B50]/80 dark:text-[#8DE1D3]">
-                    {topic.keySubtopics.join(' · ')}
-                  </div>
+        <div className="space-y-4">
+          <OceanGlassCard className="p-4 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-extrabold text-[#062B3D] dark:text-[#F3FAFA]">
+                Official SSC CGL Tier 1 &amp; Tier 2 Syllabus ({syllabusTopics.length} Topics)
+              </div>
+              <p className="text-xs text-[#075985] dark:text-[#8DE1D3]">
+                Tap &ldquo;Teach with AI&rdquo; on any topic for step-by-step lessons, worked examples &amp; adaptive drills.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowPatternGuide((p) => !p)}
+              className="min-h-[40px] px-4 py-2 rounded-xl border border-[#20C7C9] bg-[#20C7C9]/12 text-xs font-bold text-[#062B3D] dark:text-[#55D6D0] cursor-pointer"
+            >
+              {showPatternGuide ? 'Hide Exam Pattern & Cut-offs' : 'View Exam Pattern & Cut-offs'}
+            </button>
+          </OceanGlassCard>
+
+          {showPatternGuide && (
+            <OceanGlassCard className="p-5 space-y-5">
+              <div className="space-y-2">
+                <h3 className="font-display font-extrabold text-base text-[#062B3D] dark:text-[#F3FAFA]">
+                  SSC CGL Tier 1 Exam Pattern (Screening · 100 Qs · 200 Marks · 60 Mins)
+                </h3>
+                <p className="text-xs text-[#075985] dark:text-[#8DE1D3]">
+                  Negative Marking: −0.50 per wrong answer · Qualifying Minimum: UR 30% · OBC/EWS 25% · SC/ST/Others 20%
+                </p>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs text-left border-collapse">
+                    <thead>
+                      <tr className="border-b border-[#8DE1D3]/45 dark:border-[#20C7C9]/20 text-[#075985] dark:text-[#55D6D0]">
+                        <th className="py-2 pr-3">Section</th>
+                        <th className="py-2 pr-3">Questions</th>
+                        <th className="py-2 pr-3">Max Marks</th>
+                        <th className="py-2">Section Timing</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#8DE1D3]/25 dark:divide-[#20C7C9]/15">
+                      {SSC_TIER1_PATTERN.map((row) => (
+                        <tr key={row.section}>
+                          <td className="py-2 pr-3 font-semibold">{row.section}</td>
+                          <td className="py-2 pr-3 font-mono-num">{row.questions}</td>
+                          <td className="py-2 pr-3 font-mono-num">{row.marks}</td>
+                          <td className="py-2 font-mono-num">{row.duration}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => toggleSyllabusTopic(topic.id)}
-                  className={`min-h-[44px] inline-flex items-center gap-2 px-4 py-2 rounded-xl border-2 text-xs font-bold shrink-0 cursor-pointer transition-colors ${
-                    done
-                      ? 'border-[#20C7C9] bg-[#20C7C9]/15 text-[#075985] dark:text-[#55D6D0]'
-                      : 'border-[#8DE1D3]/60 dark:border-[#20C7C9]/25 text-[#073B50] dark:text-[#8DE1D3]'
-                  }`}
+              </div>
+
+              <div className="space-y-2 pt-3 border-t border-[#8DE1D3]/35 dark:border-[#20C7C9]/20">
+                <h3 className="font-display font-extrabold text-base text-[#062B3D] dark:text-[#F3FAFA]">
+                  SSC CGL Tier 2 Pattern (Paper I Merit + Qualifying + Optional JSO Paper II)
+                </h3>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs text-left border-collapse">
+                    <thead>
+                      <tr className="border-b border-[#8DE1D3]/45 dark:border-[#20C7C9]/20 text-[#075985] dark:text-[#55D6D0]">
+                        <th className="py-2 pr-3">Paper / Section</th>
+                        <th className="py-2 pr-3">Subjects / Modules</th>
+                        <th className="py-2 pr-3">Qs &amp; Marks</th>
+                        <th className="py-2">Duration &amp; Note</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#8DE1D3]/25 dark:divide-[#20C7C9]/15">
+                      {SSC_TIER2_PATTERN.map((row) => (
+                        <tr key={row.paper}>
+                          <td className="py-2 pr-3 font-bold whitespace-nowrap">{row.paper}</td>
+                          <td className="py-2 pr-3">{row.module}</td>
+                          <td className="py-2 pr-3 font-mono-num">
+                            {row.questions} · {row.marks}
+                          </td>
+                          <td className="py-2">
+                            {row.duration} · {row.note}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-3 border-t border-[#8DE1D3]/35 dark:border-[#20C7C9]/20">
+                <div>
+                  <h4 className="font-display font-bold text-sm mb-2">
+                    Tier 1 Cut-Off Trend (All Other Posts · Out of 200)
+                  </h4>
+                  <table className="w-full text-xs text-left border-collapse">
+                    <thead>
+                      <tr className="border-b border-[#8DE1D3]/45 text-[#075985] dark:text-[#55D6D0]">
+                        <th className="py-1.5">Category</th>
+                        <th className="py-1.5 font-mono-num">2023</th>
+                        <th className="py-1.5 font-mono-num">2024</th>
+                        <th className="py-1.5 font-mono-num">2025</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#8DE1D3]/20">
+                      {SSC_CUTOFF_TRENDS.tier1AllOtherPostsOutOf200.map((c) => (
+                        <tr key={c.category}>
+                          <td className="py-1.5 font-bold">{c.category}</td>
+                          <td className="py-1.5 font-mono-num">{c.y2023}</td>
+                          <td className="py-1.5 font-mono-num">{c.y2024}</td>
+                          <td className="py-1.5 font-mono-num">{c.y2025}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div>
+                  <h4 className="font-display font-bold text-sm mb-2">
+                    Tier 2 Final Cut-Off Benchmark (2024 · Out of 450)
+                  </h4>
+                  <table className="w-full text-xs text-left border-collapse">
+                    <thead>
+                      <tr className="border-b border-[#8DE1D3]/45 text-[#075985] dark:text-[#55D6D0]">
+                        <th className="py-1.5">Category</th>
+                        <th className="py-1.5 font-mono-num">Final Cut-Off</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#8DE1D3]/20">
+                      {SSC_CUTOFF_TRENDS.tier2Final2024OutOf450.map((c) => (
+                        <tr key={c.category}>
+                          <td className="py-1.5 font-bold">{c.category}</td>
+                          <td className="py-1.5 font-mono-num">{c.cutoff}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </OceanGlassCard>
+          )}
+
+          <div className="space-y-3">
+            {syllabusTopics.map((topic) => {
+              const done = profile.completedSyllabusTopics.includes(topic.id);
+              const mastery = topicMastery[topic.id];
+              return (
+                <OceanGlassCard
+                  key={topic.id}
+                  className="p-5 flex flex-wrap items-center justify-between gap-4"
                 >
-                  {done ? <CheckCircle2 className="w-4 h-4" /> : <Circle className="w-4 h-4" />}
-                  {done ? 'Completed' : 'Mark Completed'}
-                </button>
-              </OceanGlassCard>
-            );
-          })}
+                  <div className="space-y-1.5 min-w-0 flex-1">
+                    <div className="text-xs font-semibold text-[#075985] dark:text-[#55D6D0]">
+                      {SUBJECT_NAMES[topic.subject][language]} · {topic.tier} · Weightage:{' '}
+                      {topic.weightage}
+                      {topic.tierNote ? ` · ${topic.tierNote}` : ''}
+                      {mastery ? ` · Mastery: ${mastery.status.replace('_', ' ')}` : ''}
+                    </div>
+                    <h3 className="font-display font-bold text-base">{topic.title}</h3>
+                    <div className="text-xs text-[#073B50]/80 dark:text-[#8DE1D3]">
+                      {topic.keySubtopics.join(' · ')}
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        openAiTeacherWithContext({
+                          subject: topic.subject,
+                          topic: topic.title,
+                          topicId: topic.id,
+                          mode: mastery?.needsRevision ? 'revision' : 'teach',
+                          level: mastery?.level || 'easy',
+                          autoStart: true,
+                        })
+                      }
+                      className="min-h-[44px] inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#075985] hover:bg-[#073B50] dark:bg-[#20C7C9] dark:hover:bg-[#55D6D0] text-white dark:text-[#062B3D] text-xs font-extrabold cursor-pointer"
+                    >
+                      <Bot className="w-4 h-4" />
+                      Teach with AI
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => toggleSyllabusTopic(topic.id)}
+                      className={`min-h-[44px] inline-flex items-center gap-2 px-4 py-2 rounded-xl border-2 text-xs font-bold cursor-pointer transition-colors ${
+                        done
+                          ? 'border-[#20C7C9] bg-[#20C7C9]/15 text-[#075985] dark:text-[#55D6D0]'
+                          : 'border-[#8DE1D3]/60 dark:border-[#20C7C9]/25 text-[#073B50] dark:text-[#8DE1D3]'
+                      }`}
+                    >
+                      {done ? <CheckCircle2 className="w-4 h-4" /> : <Circle className="w-4 h-4" />}
+                      {done ? 'Completed' : 'Mark Completed'}
+                    </button>
+                  </div>
+                </OceanGlassCard>
+              );
+            })}
+          </div>
         </div>
       )}
 

@@ -142,8 +142,10 @@ export const MockTestEngine: React.FC<MockTestEngineProps> = ({ test, onExit, cu
       english: { correct: 0, total: 0 },
       ga: { correct: 0, total: 0 },
       computer: { correct: 0, total: 0 },
+      statistics: { correct: 0, total: 0 },
     };
 
+    const wrongQuestionIds: string[] = [];
     testQuestions.forEach((q) => {
       breakdown[q.subject].total += 1;
       const ans = answers[q.id];
@@ -154,6 +156,7 @@ export const MockTestEngine: React.FC<MockTestEngineProps> = ({ test, onExit, cu
         breakdown[q.subject].correct += 1;
       } else {
         wrong += 1;
+        wrongQuestionIds.push(q.id);
       }
     });
 
@@ -188,7 +191,7 @@ export const MockTestEngine: React.FC<MockTestEngineProps> = ({ test, onExit, cu
     setSubmittedAttempt(attempt);
     setStage('result');
     soundFX.playVictory();
-    recordMockAttempt(attempt);
+    recordMockAttempt(attempt, wrongQuestionIds);
     setSubmitting(false);
   };
 
@@ -322,7 +325,7 @@ export const MockTestEngine: React.FC<MockTestEngineProps> = ({ test, onExit, cu
             </button>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 mb-6 items-center">
+          <div className="grid grid-cols-2 sm:grid-cols-6 gap-4 mb-6 items-center">
             <div>
               <div className="text-xs text-[#075985] dark:text-[#8DE1D3]">Total Score</div>
               <div className="font-mono-num text-2xl font-extrabold">
@@ -353,6 +356,18 @@ export const MockTestEngine: React.FC<MockTestEngineProps> = ({ test, onExit, cu
               <div className="text-xs text-[#075985] dark:text-[#8DE1D3]">Time Taken</div>
               <div className="font-mono-num text-2xl font-extrabold">
                 {formatTime(submittedAttempt.timeTakenSec)}
+              </div>
+            </div>
+            <div>
+              <div className="text-xs text-[#075985] dark:text-[#8DE1D3]">Avg Speed</div>
+              <div className="font-mono-num text-2xl font-extrabold text-[#075985] dark:text-[#55D6D0]">
+                {submittedAttempt.correctCount + submittedAttempt.wrongCount > 0
+                  ? Math.round(
+                      submittedAttempt.timeTakenSec /
+                        (submittedAttempt.correctCount + submittedAttempt.wrongCount)
+                    )
+                  : 0}
+                s/Q
               </div>
             </div>
           </div>

@@ -55,7 +55,7 @@ service cloud.firestore {
         && (!('fullName' in data) || (data.fullName is string && data.fullName.size() >= 1 && data.fullName.size() <= 80))
         && (!('email' in data) || (data.email is string && data.email.size() <= 160))
         && (!('profileImage' in data) || (data.profileImage is string && data.profileImage.size() <= 500))
-        && data.preferredLanguage in ['en', 'ml', 'hi', 'ta']
+        && data.preferredLanguage in ['en', 'ml', 'manglish', 'hi', 'ta']
         && (!('targetPost' in data) || (data.targetPost is string && data.targetPost.size() <= 100))
         && (!('dailyGoalMinutes' in data) || (data.dailyGoalMinutes is int && data.dailyGoalMinutes >= 10 && data.dailyGoalMinutes <= 720))
         && data.xp is int && data.xp >= 0 && data.xp <= 10000000
@@ -274,7 +274,7 @@ service cloud.firestore {
         && data.role in ['user', 'assistant']
         && data.message is string && data.message.size() >= 1 && data.message.size() <= 8000
         && data.timestamp is string && data.timestamp.size() <= 64
-        && data.language in ['en', 'ml', 'hi', 'ta'];
+        && data.language in ['en', 'ml', 'manglish', 'hi', 'ta'];
     }
 
     function isValidBookmark(data) {
@@ -294,7 +294,7 @@ service cloud.firestore {
         && data.hoursPerDay is number && data.hoursPerDay >= 1 && data.hoursPerDay <= 16
         && data.examTarget is string && data.examTarget.size() <= 80
         && (!('examDate' in data) || (data.examDate is string && data.examDate.size() <= 40))
-        && data.preferredLanguage in ['en', 'ml', 'hi', 'ta']
+        && data.preferredLanguage in ['en', 'ml', 'manglish', 'hi', 'ta']
         && (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 64));
     }
 
@@ -556,7 +556,7 @@ service cloud.firestore {
         && data.questionId is string && data.questionId.size() >= 1 && data.questionId.size() <= 100
         && data.examYear is int && data.examYear >= 2026 && data.examYear <= 2035
         && data.tier in ['Tier 1', 'Tier 2']
-        && data.subject in ['quant', 'reasoning', 'english', 'ga', 'computer']
+        && data.subject in ['quant', 'reasoning', 'english', 'ga', 'computer', 'statistics']
         && data.topic is string && data.topic.size() >= 1 && data.topic.size() <= 80
         && data.difficulty in ['Easy', 'Medium', 'Hard']
         && data.questionEn is string && data.questionEn.size() >= 1 && data.questionEn.size() <= 1200
@@ -585,7 +585,7 @@ service cloud.firestore {
           'priorityOverride', 'isOutdated', 'outdatedNote', 'syllabusWeightage', 'updatedAt'
         ])
         && data.categoryId is string && data.categoryId.size() >= 1 && data.categoryId.size() <= 100
-        && data.subject in ['quant', 'reasoning', 'english', 'ga', 'computer']
+        && data.subject in ['quant', 'reasoning', 'english', 'ga', 'computer', 'statistics']
         && data.topic is string && data.topic.size() >= 1 && data.topic.size() <= 80
         && data.tier in ['Tier 1', 'Tier 2']
         && data.targetYear is int && data.targetYear >= 2026 && data.targetYear <= 2035

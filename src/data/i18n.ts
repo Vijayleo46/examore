@@ -45,6 +45,12 @@ export const SUBJECT_NAMES: Record<SubjectId, Record<LanguageCode, string>> = {
     hi: 'कंप्यूटर ज्ञान',
     ta: 'கணினி அறிவு',
   },
+  statistics: {
+    en: 'Statistics (JSO Tier 2)',
+    ml: 'സ്റ്റാറ്റിസ്റ്റിക്സ് (JSO Tier 2)',
+    hi: 'सांख्यिकी (JSO Tier 2)',
+    ta: 'புள்ளியியல் (JSO Tier 2)',
+  },
 };
 
 export interface UIStrings {

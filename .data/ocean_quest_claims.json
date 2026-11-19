@@ -1,1 +1,12 @@
-{}
+{
+  "guest:first:coral-1": {
+    "claimId": "guest_first_coral-1",
+    "userId": "guest",
+    "missionId": "coral-1",
+    "claimType": "first-clear",
+    "xpEarned": 108,
+    "coinsEarned": 54,
+    "crystalsEarned": 5,
+    "claimedAt": "2026-11-19T11:06:40.380Z"
+  }
+}

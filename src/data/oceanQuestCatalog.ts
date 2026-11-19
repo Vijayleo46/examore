@@ -746,6 +746,8 @@ export function getSubjectDisplayName(subject: SubjectId | 'mixed'): string {
       return 'General Awareness';
     case 'computer':
       return 'Computer Knowledge';
+    case 'statistics':
+      return 'Statistics (JSO)';
     case 'mixed':
       return 'All SSC CGL Subjects';
   }

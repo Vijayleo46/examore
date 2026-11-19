@@ -1,0 +1,7 @@
+# Copy this file to android/key.properties (never commit android/key.properties)
+# Generate keystore locally with:
+# keytool -genkey -v -keystore ~/examora-upload-key.jks -keyalg RSA -keysize 2048 -validity 10000 -alias examora
+storePassword=CHANGE_ME
+keyPassword=CHANGE_ME
+keyAlias=examora
+storeFile=/path/to/examora-upload-key.jks

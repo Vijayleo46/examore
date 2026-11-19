@@ -21,6 +21,7 @@ import {
 } from 'firebase/firestore';
 import {
   AI_EXPECTED_QUESTION_NOTICE,
+  AiTeacherPrefill,
   Announcement,
   AnswerVerificationStatus,
   BookmarkItem,
@@ -28,6 +29,7 @@ import {
   CourseDef,
   CurrentAffairsCategory,
   CurrentAffairsItem,
+  DifficultyStage,
   ExamTier,
   GameModeId,
   GameSession,
@@ -48,7 +50,10 @@ import {
   Question,
   StudyPlan,
   SubjectId,
+  TeacherMode,
+  TeachingLanguageStyle,
   TestAttempt,
+  TopicMasteryRecord,
   UserProfile,
   VideoLesson,
 } from '../types/examverse';
@@ -114,6 +119,8 @@ interface PersistedLocal {
   pyqAttempts: Record<string, PyqAttemptRecord>;
   studyPlan: StudyPlan | null;
   chatHistory: ChatMessage[];
+  teachingLanguage?: TeachingLanguageStyle;
+  topicMastery?: Record<string, TopicMasteryRecord>;
   customQuestions: Question[];
   customVideos: VideoLesson[];
   customMockTests: MockTestConfig[];
@@ -171,6 +178,7 @@ const DEFAULT_PROFILE: UserProfile = {
     english: { attempted: 3, correct: 2 },
     ga: { attempted: 2, correct: 2 },
     computer: { attempted: 0, correct: 0 },
+    statistics: { attempted: 0, correct: 0 },
   },
   videoProgress: {},
 };
@@ -205,7 +213,14 @@ function loadInitialState(): PersistedLocal {
         localReminders: parsed.localReminders ?? [],
         lastDailyReminderDate: parsed.lastDailyReminderDate ?? null,
         lastGoalCelebrationDate: parsed.lastGoalCelebrationDate ?? null,
-        profile: { ...DEFAULT_PROFILE, ...(parsed.profile || {}) },
+        profile: {
+          ...DEFAULT_PROFILE,
+          ...(parsed.profile || {}),
+          subjectStats: {
+            ...DEFAULT_PROFILE.subjectStats,
+            ...((parsed.profile && parsed.profile.subjectStats) || {}),
+          },
+        },
         testAttempts: parsed.testAttempts ?? [],
         gameSessions: parsed.gameSessions ?? [],
         bookmarks: parsed.bookmarks ?? [],
@@ -214,6 +229,8 @@ function loadInitialState(): PersistedLocal {
         pyqAttempts: parsed.pyqAttempts ?? {},
         studyPlan: parsed.studyPlan ?? null,
         chatHistory: parsed.chatHistory ?? [],
+        teachingLanguage: parsed.teachingLanguage ?? (parsed.profile?.preferredLanguage === 'ml' ? 'manglish' : (parsed.profile?.preferredLanguage as TeachingLanguageStyle) || 'manglish'),
+        topicMastery: parsed.topicMastery ?? {},
         customQuestions: parsed.customQuestions ?? [],
         customVideos: parsed.customVideos ?? [],
         customMockTests: parsed.customMockTests ?? [],
@@ -250,6 +267,8 @@ function loadInitialState(): PersistedLocal {
     pyqAttempts: {},
     studyPlan: null,
     chatHistory: [],
+    teachingLanguage: 'manglish',
+    topicMastery: {},
     customQuestions: [],
     customVideos: [],
     customMockTests: [],
@@ -328,10 +347,11 @@ interface AppContextValue {
   clearTutorHistory: () => Promise<void>;
   leaderboard: LeaderboardEntry[];
   announcements: Announcement[];
-  recordQuestionResult: (subject: SubjectId, isCorrect: boolean, xpBonus?: number) => void;
+  recordQuestionResult: (subject: SubjectId, isCorrect: boolean, xpBonus?: number, questionId?: string) => void;
   recordPyqAttempt: (question: Question, selectedIndex: number) => void;
   toggleDifficultQuestion: (questionId: string) => void;
   toggleRevisionQuestion: (questionId: string) => void;
+  addRevisionQuestions: (questionIds: string[]) => void;
   recordGameSession: (
     gameMode: GameModeId,
     gameTitle: string,
@@ -341,7 +361,7 @@ interface AppContextValue {
     accuracy: number,
     comboMax: number
   ) => Promise<void>;
-  recordMockAttempt: (attempt: TestAttempt) => Promise<void>;
+  recordMockAttempt: (attempt: TestAttempt, wrongQuestionIds?: string[]) => Promise<void>;
   updateVideoProgress: (lessonId: string, lastSec: number, completed: boolean, notes?: string) => void;
   toggleSyllabusTopic: (topicId: string) => void;
   toggleBookmark: (itemType: 'question' | 'video', itemId: string, title: string, subject: SubjectId) => void;
@@ -402,6 +422,28 @@ interface AppContextValue {
   tutorPrefill: string | null;
   openTutorWithPrompt: (prompt: string) => void;
   clearTutorPrefill: () => void;
+  teachingLanguage: TeachingLanguageStyle;
+  setTeachingLanguage: (lang: TeachingLanguageStyle) => void;
+  topicMastery: Record<string, TopicMasteryRecord>;
+  revisionDueTopics: TopicMasteryRecord[];
+  markTopicLearning: (input: {
+    topicId: string;
+    subject: SubjectId;
+    topic: string;
+    level?: DifficultyStage;
+  }) => void;
+  recordTopicPractice: (input: {
+    topicId: string;
+    subject: SubjectId;
+    topic: string;
+    isCorrect: boolean;
+    level: DifficultyStage;
+    wrongReason?: string;
+    nextAction?: 'step_down' | 'stay' | 'level_up';
+  }) => void;
+  teacherPrefill: AiTeacherPrefill | null;
+  openAiTeacherWithContext: (ctx: AiTeacherPrefill) => void;
+  clearTeacherPrefill: () => void;
   rewardToast: RewardToast | null;
   dismissToast: () => void;
   levelInfo: ReturnType<typeof computeLevel>;
@@ -433,6 +475,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [loadingQuestions, setLoadingQuestions] = useState(false);
   const [publicDataError, setPublicDataError] = useState<string | null>(null);
   const [tutorPrefill, setTutorPrefill] = useState<string | null>(null);
+  const [teacherPrefill, setTeacherPrefill] = useState<AiTeacherPrefill | null>(null);
   const [rewardToast, setRewardToast] = useState<RewardToast | null>(null);
   const [activeReminderBanner, setActiveReminderBanner] =
     useState<LocalReminderNotification | null>(null);
@@ -560,6 +603,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       difficultQuestionIds?: string[];
       revisionListIds?: string[];
       pyqAttempts?: Record<string, PyqAttemptRecord>;
+      topicMastery?: Record<string, TopicMasteryRecord>;
     }
   ) => {
     if (!auth.currentUser || !auth.currentUser.emailVerified) return;
@@ -569,6 +613,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const revIds = (overrides?.revisionListIds ?? state.revisionListIds).slice(0, 1000);
     const rawAttempts = overrides?.pyqAttempts ?? state.pyqAttempts;
     const compactAttempts = Object.fromEntries(Object.entries(rawAttempts).slice(-400));
+    const masteryMap = overrides?.topicMastery ?? state.topicMastery ?? {};
     try {
       await setDoc(
         doc(db, 'userProgress', uid),
@@ -576,7 +621,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           uid,
           completedLessonIds: prof.completedLessons.slice(0, 500),
           completedTopics: prof.completedSyllabusTopics.slice(0, 500),
-          subjectProgress: prof.subjectStats,
+          subjectProgress: {
+            ...prof.subjectStats,
+            _topicMastery: masteryMap,
+          },
           difficultQuestionIds: diffIds,
           revisionListIds: revIds,
           pyqAttempts: compactAttempts,
@@ -1049,33 +1097,54 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (snap.exists()) {
           const data = snap.data();
           const isAcctActive = data.isActive !== false;
-          setState((prev) => ({
-            ...prev,
-            onboarded: true,
-            profile: {
-              ...prev.profile,
-              uid: user.uid,
-              username: data.username ? String(data.username) : prev.profile.username,
-              displayName: String(data.displayName || user.displayName || prev.profile.displayName),
-              email: String(user.email || data.email || ''),
-              preferredLanguage: (data.preferredLanguage as LanguageCode) || prev.profile.preferredLanguage,
-              targetPost: String(data.targetPost || prev.profile.targetPost),
-              dailyGoalMinutes: Number(data.dailyGoalMinutes || prev.profile.dailyGoalMinutes),
-              xp: Math.max(prev.profile.xp, Number(data.xp || 0)),
-              coins: Math.max(prev.profile.coins, Number(data.coins || 0)),
-              streak: Math.max(prev.profile.streak, Number(data.streak || 1)),
-              role: adminAllowed ? 'admin' : 'student',
-              isActive: isAcctActive,
-              createdAt: data.createdAt ? String(data.createdAt) : prev.profile.createdAt,
-              lastLogin: data.lastLogin ? String(data.lastLogin) : prev.profile.lastLogin,
-              completedLessons: Array.isArray(data.completedLessons)
-                ? data.completedLessons
-                : prev.profile.completedLessons,
-              earnedBadges: Array.isArray(data.earnedBadges)
-                ? data.earnedBadges
-                : prev.profile.earnedBadges,
-            },
-          }));
+          setState((prev) => {
+            const isAccountSwitch =
+              Boolean(prev.profile.uid) &&
+              prev.profile.uid !== DEFAULT_PROFILE.uid &&
+              prev.profile.uid !== user.uid;
+            const baseProfile = isAccountSwitch ? DEFAULT_PROFILE : prev.profile;
+            return {
+              ...prev,
+              onboarded: true,
+              ...(isAccountSwitch
+                ? {
+                    testAttempts: [],
+                    gameSessions: [],
+                    bookmarks: [],
+                    difficultQuestionIds: [],
+                    revisionListIds: [],
+                    pyqAttempts: {},
+                    studyPlan: null,
+                    chatHistory: [],
+                    topicMastery: {},
+                    oceanQuestProgress: createDefaultOceanQuestProgress(user.uid),
+                  }
+                : {}),
+              profile: {
+                ...baseProfile,
+                uid: user.uid,
+                username: data.username ? String(data.username) : baseProfile.username,
+                displayName: String(data.displayName || user.displayName || baseProfile.displayName),
+                email: String(user.email || data.email || ''),
+                preferredLanguage: (data.preferredLanguage as LanguageCode) || baseProfile.preferredLanguage,
+                targetPost: String(data.targetPost || baseProfile.targetPost),
+                dailyGoalMinutes: Number(data.dailyGoalMinutes || baseProfile.dailyGoalMinutes),
+                xp: isAccountSwitch ? Number(data.xp || 0) : Math.max(baseProfile.xp, Number(data.xp || 0)),
+                coins: isAccountSwitch ? Number(data.coins || 50) : Math.max(baseProfile.coins, Number(data.coins || 0)),
+                streak: isAccountSwitch ? Number(data.streak || 1) : Math.max(baseProfile.streak, Number(data.streak || 1)),
+                role: adminAllowed ? 'admin' : 'student',
+                isActive: isAcctActive,
+                createdAt: data.createdAt ? String(data.createdAt) : baseProfile.createdAt,
+                lastLogin: data.lastLogin ? String(data.lastLogin) : baseProfile.lastLogin,
+                completedLessons: Array.isArray(data.completedLessons)
+                  ? data.completedLessons
+                  : baseProfile.completedLessons,
+                earnedBadges: Array.isArray(data.earnedBadges)
+                  ? data.earnedBadges
+                  : baseProfile.earnedBadges,
+              },
+            };
+          });
           if (user.emailVerified && isAcctActive) {
             await setDoc(
               userDocRef,
@@ -1084,27 +1153,59 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             ).catch(() => {});
           }
         } else {
-          const nextProfile: UserProfile = {
-            ...state.profile,
-            uid: user.uid,
-            displayName: user.displayName || state.profile.displayName,
-            email: user.email || '',
-            role: adminAllowed ? 'admin' : 'student',
-            isActive: true,
-          };
-          setState((prev) => ({ ...prev, onboarded: true, profile: nextProfile }));
-          if (user.emailVerified) {
-            await syncUserToFirestore(nextProfile, {
-              isNewRegistration: true,
-              forceAdminRole: adminAllowed,
-            });
-          }
+          setState((prev) => {
+            const isAccountSwitch =
+              Boolean(prev.profile.uid) &&
+              prev.profile.uid !== DEFAULT_PROFILE.uid &&
+              prev.profile.uid !== user.uid;
+            const baseProfile = isAccountSwitch ? DEFAULT_PROFILE : prev.profile;
+            const nextProfile: UserProfile = {
+              ...baseProfile,
+              uid: user.uid,
+              displayName: user.displayName || baseProfile.displayName,
+              email: user.email || '',
+              role: adminAllowed ? 'admin' : 'student',
+              isActive: true,
+            };
+            if (user.emailVerified) {
+              syncUserToFirestore(nextProfile, {
+                isNewRegistration: true,
+                forceAdminRole: adminAllowed,
+              });
+            }
+            return {
+              ...prev,
+              onboarded: true,
+              ...(isAccountSwitch
+                ? {
+                    testAttempts: [],
+                    gameSessions: [],
+                    bookmarks: [],
+                    difficultQuestionIds: [],
+                    revisionListIds: [],
+                    pyqAttempts: {},
+                    studyPlan: null,
+                    chatHistory: [],
+                    topicMastery: {},
+                    oceanQuestProgress: createDefaultOceanQuestProgress(user.uid),
+                  }
+                : {}),
+              profile: nextProfile,
+            };
+          });
         }
 
         // Load userProgress/{uid}
         const progSnap = await getDoc(doc(db, 'userProgress', user.uid)).catch(() => null);
         if (progSnap?.exists()) {
           const pd = progSnap.data();
+          const remoteMastery =
+            pd.subjectProgress &&
+            typeof pd.subjectProgress === 'object' &&
+            pd.subjectProgress._topicMastery &&
+            typeof pd.subjectProgress._topicMastery === 'object'
+              ? (pd.subjectProgress._topicMastery as Record<string, TopicMasteryRecord>)
+              : {};
           setState((prev) => ({
             ...prev,
             difficultQuestionIds: Array.isArray(pd.difficultQuestionIds)
@@ -1117,6 +1218,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               pd.pyqAttempts && typeof pd.pyqAttempts === 'object'
                 ? { ...pd.pyqAttempts, ...prev.pyqAttempts }
                 : prev.pyqAttempts,
+            topicMastery: {
+              ...remoteMastery,
+              ...(prev.topicMastery || {}),
+            },
             profile: {
               ...prev.profile,
               completedLessons: Array.isArray(pd.completedLessonIds)
@@ -1153,6 +1258,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               english: { correct: 0, total: 0 },
               ga: { correct: 0, total: 0 },
               computer: { correct: 0, total: 0 },
+              statistics: { correct: 0, total: 0 },
             },
             createdAt: String(dt.createdAt || dt.submittedAt || ''),
           });
@@ -1362,9 +1468,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const signOut = async () => {
     await fbSignOut(auth);
     setIsServerAdmin(false);
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+    } catch {
+      // ignore storage errors
+    }
     setState((prev) => ({
       ...prev,
       onboarded: false,
+      testAttempts: [],
+      gameSessions: [],
+      bookmarks: [],
+      difficultQuestionIds: [],
+      revisionListIds: [],
+      pyqAttempts: {},
+      studyPlan: null,
+      chatHistory: [],
+      topicMastery: {},
+      localReminders: [],
+      oceanQuestProgress: createDefaultOceanQuestProgress(DEFAULT_PROFILE.uid),
       profile: {
         ...DEFAULT_PROFILE,
         preferredLanguage: prev.profile.preferredLanguage,
@@ -1393,7 +1515,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   };
 
-  const recordQuestionResult = (subject: SubjectId, isCorrect: boolean, xpBonus = 15) => {
+  const addRevisionQuestions = (questionIds: string[]) => {
+    const clean = questionIds.map((id) => String(id).trim()).filter(Boolean);
+    if (clean.length === 0) return;
+    setState((prev) => {
+      const nextRev = Array.from(new Set([...clean, ...prev.revisionListIds])).slice(0, 1000);
+      syncUserProgressToFirestore(prev.profile, { revisionListIds: nextRev }).catch(() => {});
+      return { ...prev, revisionListIds: nextRev };
+    });
+  };
+
+  const recordQuestionResult = (
+    subject: SubjectId,
+    isCorrect: boolean,
+    xpBonus = 15,
+    questionId?: string
+  ) => {
     setState((prev) => {
       const xpGain = isCorrect ? xpBonus : 3;
       const coinGain = isCorrect ? 5 : 0;
@@ -1415,7 +1552,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
       updated.earnedBadges = evaluateBadges(updated);
       syncUserToFirestore(updated);
-      return { ...prev, profile: updated };
+      let nextRev = prev.revisionListIds;
+      if (!isCorrect && questionId) {
+        nextRev = Array.from(new Set([questionId, ...prev.revisionListIds])).slice(0, 1000);
+        syncUserProgressToFirestore(updated, { revisionListIds: nextRev }).catch(() => {});
+      }
+      return { ...prev, profile: updated, revisionListIds: nextRev };
     });
   };
 
@@ -1563,7 +1705,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  const recordMockAttempt = async (attempt: TestAttempt) => {
+  const recordMockAttempt = async (attempt: TestAttempt, wrongQuestionIds: string[] = []) => {
     const xpEarned = Math.max(40, Math.round(attempt.correctCount * 20));
     const coinsEarned = Math.max(15, Math.round(attempt.correctCount * 6));
     const nextMockCount = state.testAttempts.length + 1;
@@ -1591,9 +1733,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
       nextProfile.earnedBadges = evaluateBadges(nextProfile, attempt.accuracy);
       syncUserToFirestore(nextProfile, { mockTestsCount: nextMockCount });
+
+      const cleanWrong = wrongQuestionIds.map(String).filter(Boolean);
+      const nextRev = cleanWrong.length > 0
+        ? Array.from(new Set([...cleanWrong, ...prev.revisionListIds])).slice(0, 1000)
+        : prev.revisionListIds;
+      if (cleanWrong.length > 0) {
+        syncUserProgressToFirestore(nextProfile, { revisionListIds: nextRev }).catch(() => {});
+      }
+
       return {
         ...prev,
         profile: nextProfile,
+        revisionListIds: nextRev,
         testAttempts: [attempt, ...prev.testAttempts].slice(0, 30),
       };
     });
@@ -2509,6 +2661,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           english: { attempted: 0, correct: 0 },
           ga: { attempted: 0, correct: 0 },
           computer: { attempted: 0, correct: 0 },
+          statistics: { attempted: 0, correct: 0 },
         };
         students.push({
           uid: String(dt.uid || d.id),
@@ -2552,6 +2705,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             english: { correct: 0, total: 0 },
             ga: { correct: 0, total: 0 },
             computer: { correct: 0, total: 0 },
+            statistics: { correct: 0, total: 0 },
           },
           createdAt: String(dt.createdAt || dt.submittedAt || ''),
         });
@@ -2891,11 +3045,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const questions = useMemo(() => {
-    const map = new Map<string, Question>();
+    const byId = new Map<string, Question>();
+    const seenText = new Set<string>();
     [...QUESTIONS_BANK, ...remoteQuestions, ...state.customQuestions].forEach((q) => {
-      map.set(q.id, q);
+      const normText = String(q.questionEn || '').toLowerCase().replace(/\s+/g, ' ').trim();
+      if (!byId.has(q.id) && normText && seenText.has(normText)) {
+        return;
+      }
+      if (normText) seenText.add(normText);
+      byId.set(q.id, q);
     });
-    return Array.from(map.values());
+    return Array.from(byId.values());
   }, [state.customQuestions, remoteQuestions]);
 
   const videos = useMemo(() => {
@@ -2954,6 +3114,92 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [remoteLeaderboard, state.profile, levelInfo.current.name]);
 
   const isAdmin = isVerifiedCloudAdmin;
+
+  const markTopicLearning: AppContextValue['markTopicLearning'] = ({
+    topicId,
+    subject,
+    topic,
+    level = 'easy',
+  }) => {
+    setState((prev) => {
+      const existing = prev.topicMastery?.[topicId];
+      const nextRec: TopicMasteryRecord = {
+        topicId,
+        subject,
+        topic,
+        status: existing?.status && existing.status !== 'not_started' ? existing.status : 'learning',
+        level: existing?.level || level,
+        attempted: existing?.attempted || 0,
+        correct: existing?.correct || 0,
+        wrongCount: existing?.wrongCount || 0,
+        lastWrongReason: existing?.lastWrongReason,
+        needsRevision: existing?.needsRevision || false,
+        updatedAt: new Date().toISOString(),
+      };
+      const nextMap = { ...(prev.topicMastery || {}), [topicId]: nextRec };
+      syncUserProgressToFirestore(prev.profile, { topicMastery: nextMap }).catch(() => {});
+      return { ...prev, topicMastery: nextMap };
+    });
+  };
+
+  const recordTopicPractice: AppContextValue['recordTopicPractice'] = ({
+    topicId,
+    subject,
+    topic,
+    isCorrect,
+    level,
+    wrongReason,
+    nextAction,
+  }) => {
+    recordQuestionResult(subject, isCorrect, isCorrect ? 15 : 5);
+    setState((prev) => {
+      const cur = prev.topicMastery?.[topicId];
+      const attempted = (cur?.attempted || 0) + 1;
+      const correct = (cur?.correct || 0) + (isCorrect ? 1 : 0);
+      const wrongCount = (cur?.wrongCount || 0) + (isCorrect ? 0 : 1);
+      const acc = attempted > 0 ? correct / attempted : 0;
+
+      let nextLevel: DifficultyStage = level;
+      if (nextAction === 'level_up' || (isCorrect && correct >= 2 && level === 'easy')) {
+        nextLevel = level === 'easy' ? 'medium' : 'exam';
+      } else if (nextAction === 'step_down' && level !== 'easy') {
+        nextLevel = level === 'exam' ? 'medium' : 'easy';
+      }
+
+      const needsRevision = !isCorrect || (attempted >= 2 && acc < 0.6);
+      const status: TopicMasteryRecord['status'] = needsRevision
+        ? 'revision_needed'
+        : attempted >= 3 && acc >= 0.8 && level === 'exam'
+        ? 'strong'
+        : 'practicing';
+
+      const nextRec: TopicMasteryRecord = {
+        topicId,
+        subject,
+        topic,
+        status,
+        level: nextLevel,
+        attempted,
+        correct,
+        wrongCount,
+        lastWrongReason: !isCorrect ? wrongReason || cur?.lastWrongReason : cur?.lastWrongReason,
+        needsRevision,
+        updatedAt: new Date().toISOString(),
+      };
+
+      const nextMap = { ...(prev.topicMastery || {}), [topicId]: nextRec };
+      syncUserProgressToFirestore(prev.profile, { topicMastery: nextMap }).catch(() => {});
+      return { ...prev, topicMastery: nextMap };
+    });
+  };
+
+  const revisionDueTopics = useMemo(
+    () =>
+      Object.values(state.topicMastery || {})
+        .filter((r) => r.needsRevision || r.status === 'revision_needed')
+        .sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || '')),
+    [state.topicMastery]
+  );
 
   const value: AppContextValue = {
     showSplash,
@@ -3028,6 +3274,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     recordPyqAttempt,
     toggleDifficultQuestion,
     toggleRevisionQuestion,
+    addRevisionQuestions,
     recordGameSession,
     recordMockAttempt,
     updateVideoProgress,
@@ -3074,6 +3321,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setTutorOpen(true);
     },
     clearTutorPrefill: () => setTutorPrefill(null),
+    teachingLanguage: state.teachingLanguage || 'manglish',
+    setTeachingLanguage: (lang) =>
+      setState((prev) => ({ ...prev, teachingLanguage: lang })),
+    topicMastery: state.topicMastery || {},
+    revisionDueTopics,
+    markTopicLearning,
+    recordTopicPractice,
+    teacherPrefill,
+    openAiTeacherWithContext: (ctx) => {
+      setTeacherPrefill(ctx);
+      if (ctx.prompt) setTutorPrefill(ctx.prompt);
+      setTutorOpen(true);
+    },
+    clearTeacherPrefill: () => setTeacherPrefill(null),
     rewardToast,
     dismissToast: () => setRewardToast(null),
     levelInfo,

@@ -7,6 +7,7 @@ import { GoogleGenAI, ThinkingLevel, Type } from '@google/genai';
 
 import { OCEAN_MISSIONS_SEED } from './src/data/oceanQuestCatalog';
 import { PAST_PAPERS_2026 } from './src/data/pastPapers2026';
+import { SSC_PERSONAL_TEACHER_SYSTEM_PROMPT } from './src/data/sscMasterTeacher';
 import type { AnswerVerificationStatus, Question, SubjectId } from './src/types/examverse';
 
 dotenv.config();
@@ -84,10 +85,12 @@ function getGeminiClient(): GoogleGenAI | null {
 }
 
 const LANGUAGE_NAMES: Record<string, string> = {
-  en: 'English',
-  ml: 'Malayalam (use clear natural Malayalam script and easy Manglish terms only for technical SSC keywords when helpful)',
-  hi: 'Hindi (use clear natural Devanagari Hindi with standard SSC terminology)',
-  ta: 'Tamil (use clear natural Tamil script with standard SSC terminology)',
+  en: 'English (simple, clear, beginner-friendly explanation)',
+  manglish:
+    'Manglish (warm, friendly conversational Malayalam written in English/Roman letters mixed with exact English SSC technical terms like Percentage, Profit, Marked Price, Syllogism, Subject-Verb Agreement, OSI Layer — natural Kerala tutor tone)',
+  ml: 'Malayalam (clear natural Malayalam script + exact English SSC technical terms)',
+  hi: 'Hindi (clear natural Devanagari Hindi with standard SSC terminology)',
+  ta: 'Tamil (clear natural Tamil script with standard SSC terminology)',
 };
 
 interface PyqArchiveCache {
@@ -112,6 +115,7 @@ let pyqArchiveCache: PyqArchiveCache | null = null;
 
 function mapArchiveSubject(rawSubject: string): SubjectId {
   const low = String(rawSubject || '').toLowerCase();
+  if (low.includes('jso') || low === 'statistics') return 'statistics';
   if (low.includes('quant') || low.includes('stat')) return 'quant';
   if (low.includes('reason') || low.includes('intelligence')) return 'reasoning';
   if (low.includes('english')) return 'english';
@@ -199,10 +203,22 @@ function getPyqArchive(): PyqArchiveCache {
   }
 
   for (const q26 of PAST_PAPERS_2026) {
-    byId.set(q26.id, { ...q26, isPublished: true });
+    if (q26.sourceType !== 'AI_GENERATED') {
+      byId.set(q26.id, { ...q26, isPublished: true });
+    }
   }
 
-  const questions = Array.from(byId.values()).sort(
+  const seenNormalizedText = new Set<string>();
+  const dedupedQuestions: Question[] = [];
+  for (const q of byId.values()) {
+    if (q.sourceType === 'AI_GENERATED') continue;
+    const norm = String(q.questionEn || '').toLowerCase().replace(/\s+/g, ' ').trim();
+    if (!norm || seenNormalizedText.has(norm)) continue;
+    seenNormalizedText.add(norm);
+    dedupedQuestions.push(q);
+  }
+
+  const questions = dedupedQuestions.sort(
     (a, b) => b.year - a.year || (a.questionNumber || 0) - (b.questionNumber || 0)
   );
 
@@ -214,6 +230,7 @@ function getPyqArchive(): PyqArchiveCache {
     english: 0,
     ga: 0,
     computer: 0,
+    statistics: 0,
   };
   let tier1Count = 0;
   let tier2Count = 0;
@@ -227,6 +244,7 @@ function getPyqArchive(): PyqArchiveCache {
     english: new Set(),
     ga: new Set(),
     computer: new Set(),
+    statistics: new Set(),
   };
   const dateSet = new Set<string>();
   const shiftSet = new Set<string>();
@@ -453,8 +471,11 @@ async function startServer() {
     try {
       const {
         messages = [],
-        language = 'en',
+        language = 'manglish',
         subjectContext = 'General SSC CGL',
+        topicContext,
+        mode = 'doubt',
+        difficultyLevel = 'easy',
         imageBase64,
         imageMimeType,
         studentContext,
@@ -462,9 +483,17 @@ async function startServer() {
         messages: Array<{ role: 'user' | 'assistant'; text: string }>;
         language?: string;
         subjectContext?: string;
+        topicContext?: string;
+        mode?: string;
+        difficultyLevel?: string;
         imageBase64?: string;
         imageMimeType?: string;
-        studentContext?: { level?: string; targetPost?: string; weakSubjects?: string[] };
+        studentContext?: {
+          level?: string;
+          targetPost?: string;
+          weakSubjects?: string[];
+          revisionTopics?: string[];
+        };
       };
 
       const ai = getGeminiClient();
@@ -474,32 +503,32 @@ async function startServer() {
         });
       }
 
-      const langDesc = LANGUAGE_NAMES[language] || LANGUAGE_NAMES.en;
+      const langDesc = LANGUAGE_NAMES[language] || LANGUAGE_NAMES.manglish;
       const systemInstruction = [
-        'You are "ExamVerse AI Tutor", a friendly, patient, and highly accurate SSC CGL exam coach.',
-        `Respond primarily in ${langDesc}.`,
-        'When explaining Previous Year Questions or English Grammar, preserve the original English question or key English words clearly alongside your explanation in the selected language.',
-        'For Maths & Quantitative Aptitude, show step-by-step calculations plus a fast exam-hall shortcut trick.',
-        'For Reasoning, explain the exact pattern/rule and why distractor options are incorrect.',
-        'Be honest and rigorous: never claim an AI-generated practice question is an official SSC CGL answer key.',
-        `Current subject focus: ${subjectContext}.`,
-        studentContext?.targetPost ? `Student target post: ${studentContext.targetPost}.` : '',
+        SSC_PERSONAL_TEACHER_SYSTEM_PROMPT,
+        `Active Teaching Language Style: ${langDesc}.`,
+        `Active Mode: ${mode.toUpperCase()} · Subject Focus: ${subjectContext}${topicContext ? ` · Topic: ${topicContext}` : ''} · Current Level: ${difficultyLevel}.`,
+        'When explaining English Grammar or Official Questions, preserve exact English wording alongside your explanation.',
+        studentContext?.targetPost ? `Student Target Post: ${studentContext.targetPost}.` : '',
         studentContext?.weakSubjects?.length
-          ? `Student weak areas: ${studentContext.weakSubjects.join(', ')}.`
+          ? `Weak Subjects: ${studentContext.weakSubjects.join(', ')}.`
+          : '',
+        studentContext?.revisionTopics?.length
+          ? `Topics Marked Revision Needed: ${studentContext.revisionTopics.join(', ')}.`
           : '',
       ]
         .filter(Boolean)
-        .join('\n');
+        .join('\n\n');
 
       const latestUserMessage = messages[messages.length - 1]?.text || 'Help me prepare for SSC CGL.';
       const historyText = messages
         .slice(0, -1)
         .slice(-8)
-        .map((m) => `${m.role === 'user' ? 'Student' : 'Tutor'}: ${m.text}`)
+        .map((m) => `${m.role === 'user' ? 'Student' : 'Teacher'}: ${m.text}`)
         .join('\n\n');
 
       const promptText = historyText
-        ? `Previous conversation:\n${historyText}\n\nStudent's new question:\n${latestUserMessage}`
+        ? `Previous conversation:\n${historyText}\n\nStudent's new message:\n${latestUserMessage}`
         : latestUserMessage;
 
       const contents =
@@ -522,6 +551,7 @@ async function startServer() {
         contents,
         config: {
           systemInstruction,
+          thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
         },
       });
 
@@ -530,8 +560,317 @@ async function startServer() {
       });
     } catch (error) {
       console.error('AI Tutor error:', error);
-      const message = error instanceof Error ? error.message : 'Failed to contact ExamVerse AI Tutor';
+      const message = error instanceof Error ? error.message : 'Failed to contact Examora AI Personal Teacher';
       res.status(500).json({ error: message });
+    }
+  });
+
+  app.post('/api/ai/teacher-lesson', async (req, res) => {
+    try {
+      const {
+        subject = 'quant',
+        subjectTitle = 'Quantitative Aptitude',
+        topic = 'Percentage',
+        level = 'easy',
+        language = 'manglish',
+        isRevision = false,
+      } = req.body as {
+        subject?: SubjectId;
+        subjectTitle?: string;
+        topic?: string;
+        level?: 'easy' | 'medium' | 'exam';
+        language?: string;
+        isRevision?: boolean;
+      };
+
+      const ai = getGeminiClient();
+      if (!ai) {
+        return res.status(503).json({ error: 'GEMINI_API_KEY is not configured in environment secrets.' });
+      }
+
+      const langDesc = LANGUAGE_NAMES[language] || LANGUAGE_NAMES.manglish;
+      const levelDesc =
+        level === 'easy'
+          ? 'Level 1 Easy (Absolute beginner foundation)'
+          : level === 'medium'
+          ? 'Level 2 Medium (Concept application & speed)'
+          : 'Level 3 SSC Exam Level (Tier 1 & Tier 2 tricky patterns)';
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-4-hydrogen',
+        contents: `Teach the SSC CGL syllabus topic "${topic}" under "${subjectTitle}" at "${levelDesc}".
+${isRevision ? 'NOTE: The student previously made mistakes in this topic, so make the intuition super clear and address common traps.' : ''}
+Language style: ${langDesc}.
+Keep formulas, English technical terms, and numbers crisp and 100% accurate. Double check every calculation in workedExample before returning.`,
+        config: {
+          systemInstruction: `${SSC_PERSONAL_TEACHER_SYSTEM_PROMPT}\n\nReturn compact, encouraging, beginner-friendly JSON matching the required lesson fields.`,
+          thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              easyExplanation: { type: Type.STRING },
+              ruleOrFormula: { type: Type.STRING },
+              workedExample: {
+                type: Type.OBJECT,
+                properties: {
+                  problem: { type: Type.STRING },
+                  steps: { type: Type.ARRAY, items: { type: Type.STRING } },
+                  finalAnswer: { type: Type.STRING },
+                },
+              },
+              examShortcut: { type: Type.STRING },
+              whenNotToUseShortcut: { type: Type.STRING },
+              commonMistake: { type: Type.STRING },
+              quickCheckPrompt: { type: Type.STRING },
+            },
+          },
+        },
+      });
+
+      const parsed = JSON.parse(response.text || '{}');
+      res.json({
+        topic,
+        subject,
+        level,
+        easyExplanation: parsed.easyExplanation || '',
+        ruleOrFormula: parsed.ruleOrFormula || '',
+        workedExample: parsed.workedExample || { problem: '', steps: [], finalAnswer: '' },
+        examShortcut: parsed.examShortcut || '',
+        whenNotToUseShortcut: parsed.whenNotToUseShortcut || '',
+        commonMistake: parsed.commonMistake || '',
+        quickCheckPrompt: parsed.quickCheckPrompt || '',
+      });
+    } catch (error) {
+      console.error('Teacher Lesson error:', error);
+      res.status(500).json({ error: 'Unable to prepare the AI teacher lesson right now.' });
+    }
+  });
+
+  app.post('/api/ai/teacher-question', async (req, res) => {
+    try {
+      const {
+        subject = 'quant',
+        subjectTitle = 'Quantitative Aptitude',
+        topic = 'Percentage',
+        keywords = [],
+        level = 'easy',
+        language = 'manglish',
+        preferPyq = false,
+        excludeIds = [],
+      } = req.body as {
+        subject?: SubjectId;
+        subjectTitle?: string;
+        topic?: string;
+        keywords?: string[];
+        level?: 'easy' | 'medium' | 'exam';
+        language?: string;
+        preferPyq?: boolean;
+        excludeIds?: string[];
+      };
+
+      const excluded = new Set(excludeIds);
+      const targetDiff = level === 'easy' ? 'Easy' : level === 'medium' ? 'Medium' : 'Hard';
+
+      // Priority 1: Check authentic archived PYQs ONLY when matching verified archive exists
+      if (preferPyq || level === 'exam') {
+        const archive = getPyqArchive();
+        const searchTerms = [topic.toLowerCase(), ...keywords.map((k) => k.toLowerCase())].filter(Boolean);
+        const matches = archive.questions.filter((q) => {
+          if (excluded.has(q.id)) return false;
+          if (q.subject !== subject && !(subject === 'statistics' && q.subject === 'quant')) return false;
+          if (q.answerStatus !== 'official') return false;
+          const hay = `${q.topic} ${q.questionEn}`.toLowerCase();
+          return searchTerms.some((term) => hay.includes(term));
+        });
+
+        const diffMatches = matches.filter((m) => m.difficulty === targetDiff);
+        const pool = diffMatches.length > 0 ? diffMatches : matches;
+
+        if (pool.length > 0) {
+          const picked = pool[Math.floor(Math.random() * Math.min(pool.length, 15))];
+          return res.json({
+            id: picked.id,
+            provenance: 'AUTHENTIC_PYQ',
+            subject,
+            topic,
+            level,
+            question: picked.questionEn,
+            options: picked.optionsEn,
+            correctIndex: picked.correctIndex,
+            hint1: `Focus on the core rule of ${topic}. Identify what value is given and what the question asks.`,
+            hint2: picked.stepByStep?.[0] || `Break the problem into two clean steps using ${topic} fundamentals.`,
+            fullSolution:
+              picked.explanations?.en ||
+              (picked.stepByStep ? picked.stepByStep.join(' ') : 'Check the verified answer key.'),
+            memoryTip: picked.shortcutMethod || `Always verify units and options for ${topic} in SSC CGL.`,
+            pyqMeta: {
+              questionId: picked.id,
+              year: picked.year,
+              tier: picked.tier,
+              examDate: picked.examDate,
+              shift: picked.shift,
+              verificationStatus: 'Official Answer Key Verified',
+            },
+          });
+        }
+      }
+
+      // Priority 2: Generate an original practice question clearly tagged GENERATED_PRACTICE
+      const ai = getGeminiClient();
+      if (!ai) {
+        return res.status(503).json({ error: 'GEMINI_API_KEY is not configured in environment secrets.' });
+      }
+
+      const langDesc = LANGUAGE_NAMES[language] || LANGUAGE_NAMES.manglish;
+      const levelDesc =
+        level === 'easy'
+          ? 'Level 1 Easy (beginner-friendly single concept)'
+          : level === 'medium'
+          ? 'Level 2 Medium (multi-step application)'
+          : 'Level 3 SSC Exam Level (realistic SSC CGL Tier 1/Tier 2 standard)';
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-4-hydrogen',
+        contents: `Generate ONE original SSC CGL practice MCQ (GENERATED_PRACTICE — do NOT claim it is a past year paper) for:
+Subject: ${subjectTitle}
+Topic: ${topic}
+Difficulty: ${levelDesc}
+
+Requirements:
+- Question and 4 options MUST be in crisp, unambiguous SSC exam English.
+- Double-check arithmetic, grammar, and logic so options[correctIndex] is 100% mathematically/grammatically correct and unique.
+- Write hint1 (gentle direction without giving away the answer), hint2 (formula or first calculation step), fullSolution (clear step-by-step), and memoryTip in: ${langDesc}.`,
+        config: {
+          systemInstruction: SSC_PERSONAL_TEACHER_SYSTEM_PROMPT,
+          thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              question: { type: Type.STRING },
+              options: { type: Type.ARRAY, items: { type: Type.STRING } },
+              correctIndex: { type: Type.INTEGER },
+              hint1: { type: Type.STRING },
+              hint2: { type: Type.STRING },
+              fullSolution: { type: Type.STRING },
+              memoryTip: { type: Type.STRING },
+            },
+          },
+        },
+      });
+
+      const parsed = JSON.parse(response.text || '{}');
+      const opts = Array.isArray(parsed.options) && parsed.options.length >= 4
+        ? parsed.options.slice(0, 4).map(String)
+        : ['Option A', 'Option B', 'Option C', 'Option D'];
+      const safeIdx = Math.min(3, Math.max(0, Number(parsed.correctIndex || 0)));
+
+      res.json({
+        id: `gen-${subject}-${Date.now()}`,
+        provenance: 'GENERATED_PRACTICE',
+        subject,
+        topic,
+        level,
+        question: String(parsed.question || ''),
+        options: opts,
+        correctIndex: safeIdx,
+        hint1: String(parsed.hint1 || ''),
+        hint2: String(parsed.hint2 || ''),
+        fullSolution: String(parsed.fullSolution || ''),
+        memoryTip: String(parsed.memoryTip || ''),
+      });
+    } catch (error) {
+      console.error('Teacher Question error:', error);
+      res.status(500).json({ error: 'Unable to load practice question right now.' });
+    }
+  });
+
+  app.post('/api/ai/mistake-analysis', async (req, res) => {
+    try {
+      const {
+        question = '',
+        options = [],
+        selectedIndex = 0,
+        correctIndex = 0,
+        subjectTitle = 'Quantitative Aptitude',
+        topic = 'Percentage',
+        level = 'easy',
+        language = 'manglish',
+        studentNote = '',
+      } = req.body as {
+        question?: string;
+        options?: string[];
+        selectedIndex?: number;
+        correctIndex?: number;
+        subjectTitle?: string;
+        topic?: string;
+        level?: 'easy' | 'medium' | 'exam';
+        language?: string;
+        studentNote?: string;
+      };
+
+      const ai = getGeminiClient();
+      if (!ai) {
+        return res.status(503).json({ error: 'GEMINI_API_KEY is not configured in environment secrets.' });
+      }
+
+      const isCorrect = Number(selectedIndex) === Number(correctIndex);
+      const langDesc = LANGUAGE_NAMES[language] || LANGUAGE_NAMES.manglish;
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-4-hydrogen',
+        contents: `Analyze this student's answer on SSC CGL ${subjectTitle} — ${topic} (${level} level).
+Question: ${question}
+Options: ${options.map((o, i) => `${['A', 'B', 'C', 'D'][i]}) ${o}`).join(' | ')}
+Student picked: ${['A', 'B', 'C', 'D'][selectedIndex]} (${options[selectedIndex] || ''})
+Correct option: ${['A', 'B', 'C', 'D'][correctIndex]} (${options[correctIndex] || ''})
+Result: ${isCorrect ? 'CORRECT' : 'INCORRECT'}
+${studentNote ? `Student note: ${studentNote}` : ''}
+
+Respond in ${langDesc}:
+1. whyWrongOrRight: Warm, specific explanation of WHY their picked option went wrong (the exact trap/misconception) or why their reasoning succeeded.
+2. simpleReteach: Very short 2-line clear re-teach of the core rule.
+3. memoryTrick: 1-line easy memory hook or exam check trick.
+4. nextAction: Choose 'step_down' (if wrong at medium/exam and struggling), 'stay' (if wrong at easy or needs 1 more check), or 'level_up' (if correct and ready to progress).
+5. checkQuestion: A tiny 1-line "Did this click?" or mini sanity-check question for the student.`,
+        config: {
+          systemInstruction: SSC_PERSONAL_TEACHER_SYSTEM_PROMPT,
+          thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              whyWrongOrRight: { type: Type.STRING },
+              simpleReteach: { type: Type.STRING },
+              memoryTrick: { type: Type.STRING },
+              nextAction: { type: Type.STRING },
+              checkQuestion: { type: Type.STRING },
+            },
+          },
+        },
+      });
+
+      const parsed = JSON.parse(response.text || '{}');
+      const rawAction = String(parsed.nextAction || (isCorrect ? 'level_up' : 'stay'));
+      const nextAction =
+        rawAction === 'step_down' || rawAction === 'level_up' || rawAction === 'stay'
+          ? rawAction
+          : isCorrect
+          ? 'level_up'
+          : 'stay';
+
+      res.json({
+        isCorrect,
+        whyWrongOrRight: String(parsed.whyWrongOrRight || ''),
+        simpleReteach: String(parsed.simpleReteach || ''),
+        memoryTrick: String(parsed.memoryTrick || ''),
+        nextAction,
+        checkQuestion: String(parsed.checkQuestion || ''),
+      });
+    } catch (error) {
+      console.error('Mistake Analysis error:', error);
+      res.status(500).json({ error: 'Unable to run mistake analysis right now.' });
     }
   });
 
@@ -1046,6 +1385,7 @@ Respond in ${langDesc} for descriptions while keeping SSC topic names clear. Pro
         english: [],
         ga: [],
         computer: [],
+        statistics: [],
       };
       pool.forEach((q) => buckets[q.subject]?.push(q));
       const picked: Question[] = [];

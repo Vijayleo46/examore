@@ -392,7 +392,7 @@ class FirestoreService {
       'updatedAt': DateTime.now().toUtc().toIso8601String(),
     };
     if (preferredLanguage != null &&
-        ['en', 'ml', 'hi', 'ta'].contains(preferredLanguage)) {
+        ['en', 'ml', 'manglish', 'hi', 'ta'].contains(preferredLanguage)) {
       updates['preferredLanguage'] = preferredLanguage;
     }
     if (dailyGoalMinutes != null &&
@@ -404,6 +404,135 @@ class FirestoreService {
       updates['targetPost'] = targetPost.trim();
     }
     await _db.collection('users').doc(uid).update(updates);
+  }
+
+  Stream<DocumentSnapshot<Map<String, dynamic>>> streamUserProgress(
+    String uid,
+  ) {
+    return _db.collection('userProgress').doc(uid).snapshots();
+  }
+
+  Future<Map<String, dynamic>> loadUserProgressSnapshot(String uid) async {
+    if (uid.isEmpty) return {};
+    try {
+      final snap = await _db.collection('userProgress').doc(uid).get();
+      return snap.data() ?? {};
+    } catch (_) {
+      return {};
+    }
+  }
+
+  Future<void> toggleSyllabusTopicCompleted({
+    required String uid,
+    required String topicId,
+    required bool completed,
+  }) async {
+    if (uid.isEmpty || topicId.trim().isEmpty) return;
+    final nowIso = DateTime.now().toUtc().toIso8601String();
+    final ref = _db.collection('userProgress').doc(uid);
+    final snap = await ref.get();
+    final existing = snap.data() ?? <String, dynamic>{};
+    final topics = Set<String>.from(
+      (existing['completedTopics'] as List<dynamic>? ?? [])
+          .map((e) => e.toString()),
+    );
+    if (completed) {
+      topics.add(topicId);
+    } else {
+      topics.remove(topicId);
+    }
+
+    await ref.set({
+      'uid': uid,
+      'completedLessonIds': List<dynamic>.from(
+        existing['completedLessonIds'] as List? ?? [],
+      ),
+      'completedTopics': topics.take(500).toList(),
+      'totalStudyMinutes':
+          int.tryParse((existing['totalStudyMinutes'] ?? 0).toString()) ?? 0,
+      if (existing['subjectProgress'] is Map)
+        'subjectProgress': existing['subjectProgress'],
+      if (existing['difficultQuestionIds'] is List)
+        'difficultQuestionIds': existing['difficultQuestionIds'],
+      if (existing['revisionListIds'] is List)
+        'revisionListIds': existing['revisionListIds'],
+      if (existing['pyqAttempts'] is Map)
+        'pyqAttempts': existing['pyqAttempts'],
+      'lastStudiedAt': nowIso,
+    });
+  }
+
+  Future<void> recordTopicMastery({
+    required String uid,
+    required String topicTitle,
+    required String subject,
+    required String masteryLevel,
+    required bool isCorrectAttempt,
+  }) async {
+    if (uid.isEmpty || topicTitle.trim().isEmpty) return;
+    final nowIso = DateTime.now().toUtc().toIso8601String();
+    final ref = _db.collection('userProgress').doc(uid);
+    try {
+      final snap = await ref.get();
+      final existing = snap.data() ?? <String, dynamic>{};
+      final subjectProgress = Map<String, dynamic>.from(
+        existing['subjectProgress'] as Map? ?? {},
+      );
+      final masteryMap = Map<String, dynamic>.from(
+        subjectProgress['_topicMastery'] as Map? ?? {},
+      );
+      final prev = Map<String, dynamic>.from(
+        masteryMap[topicTitle] as Map? ?? {},
+      );
+      final attempted = (int.tryParse('${prev['attempted'] ?? 0}') ?? 0) + 1;
+      final correct = (int.tryParse('${prev['correct'] ?? 0}') ?? 0) +
+          (isCorrectAttempt ? 1 : 0);
+      masteryMap[topicTitle] = {
+        'topic': topicTitle,
+        'subject': subject,
+        'attempted': attempted,
+        'correct': correct,
+        'accuracy': ((correct * 100) / attempted).round(),
+        'level': masteryLevel,
+        'needsRevision': !isCorrectAttempt || ((correct * 100) / attempted) < 60,
+        'updatedAt': nowIso,
+      };
+      subjectProgress['_topicMastery'] = masteryMap;
+
+      await ref.set({
+        'uid': uid,
+        'completedLessonIds': List<dynamic>.from(
+          existing['completedLessonIds'] as List? ?? [],
+        ),
+        'completedTopics': List<dynamic>.from(
+          existing['completedTopics'] as List? ?? [],
+        ),
+        'subjectProgress': subjectProgress,
+        'totalStudyMinutes':
+            int.tryParse((existing['totalStudyMinutes'] ?? 0).toString()) ?? 0,
+        if (existing['difficultQuestionIds'] is List)
+          'difficultQuestionIds': existing['difficultQuestionIds'],
+        if (existing['revisionListIds'] is List)
+          'revisionListIds': existing['revisionListIds'],
+        if (existing['pyqAttempts'] is Map)
+          'pyqAttempts': existing['pyqAttempts'],
+        'lastStudiedAt': nowIso,
+      });
+    } catch (_) {}
+  }
+
+  Future<void> addWrongQuestionsToRevision({
+    required String uid,
+    required List<String> wrongIds,
+  }) async {
+    final clean = wrongIds.map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+    if (uid.isEmpty || clean.isEmpty) return;
+    final current = await loadStudentPyqState(uid);
+    final nextRev = {...current.revisionIds, ...clean}.take(1000).toSet();
+    await _syncUserProgressPyqFields(
+      uid,
+      current.copyWith(revisionIds: nextRev),
+    );
   }
 
   Future<void> markLessonCompleted({
@@ -427,7 +556,8 @@ class FirestoreService {
     required bool isCorrect,
   }) async {
     final normalizedSubject =
-        ['quant', 'reasoning', 'english', 'ga', 'computer'].contains(subject)
+        ['quant', 'reasoning', 'english', 'ga', 'computer', 'statistics']
+                .contains(subject)
             ? subject
             : 'quant';
     final nowIso = DateTime.now().toUtc().toIso8601String();
@@ -459,6 +589,7 @@ class FirestoreService {
     required int accuracy,
     required int timeTakenSec,
     required Map<String, Map<String, int>> subjectBreakdown,
+    List<String> wrongQuestionIds = const [],
   }) async {
     final nowIso = DateTime.now().toUtc().toIso8601String();
     final attemptId = 'att_${DateTime.now().millisecondsSinceEpoch}';
@@ -480,16 +611,34 @@ class FirestoreService {
       'createdAt': nowIso,
     });
 
-    batch.update(_db.collection('users').doc(uid), {
+    final userUpdates = <String, dynamic>{
       'mockTestsCompleted': FieldValue.increment(1),
       'questionsAttempted': FieldValue.increment(correctCount + wrongCount),
       'questionsCorrect': FieldValue.increment(correctCount),
       'xp': FieldValue.increment(correctCount * 20),
       'totalPoints': FieldValue.increment(correctCount * 20),
       'updatedAt': nowIso,
+    };
+    subjectBreakdown.forEach((sub, counts) {
+      if (['quant', 'reasoning', 'english', 'ga', 'computer', 'statistics']
+          .contains(sub)) {
+        final att = counts['attempted'] ?? 0;
+        final cor = counts['correct'] ?? 0;
+        if (att > 0) {
+          userUpdates['subjectStats.$sub.attempted'] = FieldValue.increment(att);
+        }
+        if (cor > 0) {
+          userUpdates['subjectStats.$sub.correct'] = FieldValue.increment(cor);
+        }
+      }
     });
+    batch.update(_db.collection('users').doc(uid), userUpdates);
 
     await batch.commit();
+
+    if (wrongQuestionIds.isNotEmpty) {
+      await addWrongQuestionsToRevision(uid: uid, wrongIds: wrongQuestionIds);
+    }
   }
 
   // ---------------- OCEAN QUEST PROGRESSION & CLAIMS ----------------
@@ -842,8 +991,14 @@ class FirestoreService {
               FieldValue.arrayUnion([unlockedBadgeId]);
         }
         subjectDelta.forEach((sub, counts) {
-          if (['quant', 'reasoning', 'english', 'ga', 'computer']
-              .contains(sub)) {
+          if ([
+            'quant',
+            'reasoning',
+            'english',
+            'ga',
+            'computer',
+            'statistics',
+          ].contains(sub)) {
             final att = counts['attempted'] ?? 0;
             final cor = counts['correct'] ?? 0;
             if (att > 0) {
@@ -907,17 +1062,155 @@ class FirestoreService {
     );
   }
 
+  String _tutorPrefsKey(String uid) => 'examora_tutor_chat_$uid';
+
+  Future<List<Map<String, dynamic>>> loadAiTutorHistory(String uid) async {
+    final prefs = await SharedPreferences.getInstance();
+    final List<Map<String, dynamic>> merged = [];
+
+    if (uid.isNotEmpty) {
+      try {
+        final snap = await _db
+            .collection('aiTutorChats')
+            .doc(uid)
+            .collection('messages')
+            .orderBy('timestamp', descending: false)
+            .limit(60)
+            .get();
+        for (final d in snap.docs) {
+          final dt = d.data();
+          merged.add({
+            'messageId': (dt['messageId'] ?? d.id).toString(),
+            'role': dt['role'] == 'user' ? 'user' : 'assistant',
+            'message': (dt['message'] ?? '').toString(),
+            'timestamp': (dt['timestamp'] ?? '').toString(),
+            'language': (dt['language'] ?? 'en').toString(),
+          });
+        }
+      } catch (_) {}
+    }
+
+    if (merged.isEmpty) {
+      final raw = prefs.getString(_tutorPrefsKey(uid));
+      if (raw != null && raw.isNotEmpty) {
+        try {
+          final list = jsonDecode(raw);
+          if (list is List) {
+            for (final item in list) {
+              if (item is Map) merged.add(Map<String, dynamic>.from(item));
+            }
+          }
+        } catch (_) {}
+      }
+    } else {
+      try {
+        await prefs.setString(_tutorPrefsKey(uid), jsonEncode(merged));
+      } catch (_) {}
+    }
+    return merged;
+  }
+
+  Future<void> saveAiTutorMessage({
+    required String uid,
+    required String messageId,
+    required String role,
+    required String message,
+    required String language,
+    required String timestamp,
+  }) async {
+    final cleanMsg = message.trim();
+    if (cleanMsg.isEmpty) return;
+    final clippedMsg =
+        cleanMsg.length > 7900 ? cleanMsg.substring(0, 7900) : cleanMsg;
+    final safeLang =
+        ['en', 'ml', 'manglish', 'hi', 'ta'].contains(language)
+            ? language
+            : 'en';
+    final safeId = messageId.replaceAll(RegExp(r'[^a-zA-Z0-9_\-]'), '_');
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final existing = await loadAiTutorHistory(uid);
+      final updated = [
+        ...existing.where((m) => m['messageId'] != safeId),
+        {
+          'messageId': safeId,
+          'role': role == 'user' ? 'user' : 'assistant',
+          'message': clippedMsg,
+          'timestamp': timestamp,
+          'language': safeLang,
+        },
+      ];
+      final trimmed =
+          updated.length > 60 ? updated.sublist(updated.length - 60) : updated;
+      await prefs.setString(_tutorPrefsKey(uid), jsonEncode(trimmed));
+    } catch (_) {}
+
+    if (uid.isNotEmpty) {
+      try {
+        await _db
+            .collection('aiTutorChats')
+            .doc(uid)
+            .collection('messages')
+            .doc(safeId)
+            .set({
+          'messageId': safeId,
+          'role': role == 'user' ? 'user' : 'assistant',
+          'message': clippedMsg,
+          'timestamp': timestamp,
+          'language': safeLang,
+        });
+      } catch (_) {}
+    }
+  }
+
+  Future<void> clearAiTutorHistory(String uid) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_tutorPrefsKey(uid));
+    } catch (_) {}
+    if (uid.isNotEmpty) {
+      try {
+        final snap = await _db
+            .collection('aiTutorChats')
+            .doc(uid)
+            .collection('messages')
+            .limit(80)
+            .get();
+        if (snap.docs.isNotEmpty) {
+          final batch = _db.batch();
+          for (final d in snap.docs) {
+            batch.delete(d.reference);
+          }
+          await batch.commit();
+        }
+      } catch (_) {}
+    }
+  }
+
   Future<String> askAiTutor({
     required String message,
     required String language,
     String? contextTopic,
+    String? subject,
+    String? mode,
+    String? difficultyLevel,
+    String? systemPrompt,
+    List<Map<String, String>>? history,
   }) async {
     try {
       final callable = _functions.httpsCallable('askExamoraTutor');
       final res = await callable.call({
         'message': message,
         'language': language,
-        if (contextTopic != null) 'topic': contextTopic,
+        if (contextTopic != null && contextTopic.isNotEmpty) 'topic': contextTopic,
+        if (subject != null && subject.isNotEmpty) 'subject': subject,
+        if (mode != null && mode.isNotEmpty) 'mode': mode,
+        if (difficultyLevel != null && difficultyLevel.isNotEmpty)
+          'difficultyLevel': difficultyLevel,
+        if (systemPrompt != null && systemPrompt.isNotEmpty)
+          'systemPrompt': systemPrompt,
+        if (history != null && history.isNotEmpty) 'history': history,
       });
       final data = Map<String, dynamic>.from(res.data as Map);
       final reply = (data['reply'] ?? data['answer'] ?? '').toString().trim();
@@ -926,18 +1219,52 @@ class FirestoreService {
       // Fallback to structured study guidance below without surfacing technical details.
     }
 
-    final topicLine = contextTopic != null && contextTopic.isNotEmpty
-        ? 'Topic Focus: $contextTopic\n\n'
-        : '';
+    final topicName = (contextTopic != null && contextTopic.isNotEmpty)
+        ? contextTopic
+        : 'SSC CGL Core Topic';
+    final levelLabel = (difficultyLevel != null && difficultyLevel.isNotEmpty)
+        ? difficultyLevel
+        : 'Easy -> Exam Level';
+    final activeMode = (mode ?? 'teach').toLowerCase();
+
+    if (language == 'manglish') {
+      if (activeMode == 'practice' || activeMode == 'pyq') {
+        return 'Topic: $topicName ($levelLabel)\n\n'
+            'Practice Check (GENERATED_PRACTICE — AI SSC-pattern drill):\n'
+            '1. Question-il thannirikkunna values aadyam ezhutuka.\n'
+            '2. Base value epozhum 100% allenkil simple ratio aayi edukkaam.\n'
+            '3. Ninte option (A/B/C/D) type cheyyu — shari aanel next level-ilekku povaam, thettiyaal enthukond thettiyennu njan explain cheythu tharaam!';
+      }
+      if (activeMode == 'revision') {
+        return 'Revision Focus: $topicName\n\n'
+            '1. Core Rule: Ee topic-ile main formula oru thavana koodi manassil urappikku.\n'
+            '2. Common Trap: Sign mistakes (+ / −), unit conversion, allenkil wrong base value edukkaruthu.\n'
+            '3. Quick Check: "$message"\n'
+            'Ninte doubt allenkil answer step ivide type cheyyu — namukk athu clear aakkaam.';
+      }
+      return 'Topic: $topicName ($levelLabel)\n\n'
+          '1. Easy Explanation:\n'
+          '"$topicName" SSC CGL Tier 1 & Tier 2-il regular aayi varunna scoring topic aanu. Concept simple aayi manassilaakkiyaal 20–30 seconds-il answer kittum.\n\n'
+          '2. Core Rule & Worked Example:\n'
+          '• Given values ratio/fraction aakki maattuka.\n'
+          '• Step-by-step verify cheythittu mathram final option mark cheyyuka.\n\n'
+          '3. Shortcut & Warning:\n'
+          '• Shortcut upayogikkumpol conditions (same base / equal time) check cheyyanam; allenkil normal method thanne safe aanu.\n\n'
+          '4. Common Mistake:\n'
+          '• Question-il "of" ennathinte base maaripokaruthu.\n\n'
+          'Ninte doubt ("$message") manassilaayo? Venamenkil oru 1-question practice check tharaam!';
+    }
+
+    final topicLine = topicName.isNotEmpty ? 'Topic Focus: $topicName ($levelLabel)\n\n' : '';
     switch (language) {
       case 'ml':
-        return '${topicLine}Examora Study Guide (Malayalam):\n1. ചോദ്യം വ്യക്തമായി വായിച്ച് നൽകിയ മൂല്യങ്ങൾ കുറിക്കുക.\n2. അനുപാതം / ശതമാനം / അടിസ്ഥാന ഫോർമുല ഉപയോഗിച്ച് വേഗത്തിൽ പരിഹരിക്കുക.\n3. ഉത്തരം ഓപ്ഷനുകളുമായി ഒത്തുനോക്കുക.\n\nചോദ്യം: "$message" — വേണമെങ്കിൽ ഓപ്ഷനുകൾ കൂടി നൽകൂ, ഞാൻ ഘട്ടം ഘട്ടമായി വിശദീകരിക്കാം.';
+        return '${topicLine}Examora Study Guide (Malayalam):\n1. ചോദ്യം വ്യക്തമായി വായിച്ച് നൽകിയ മൂല്യങ്ങൾ കുറിക്കുക.\n2. അനുപാതം / ശതമാനം / അടിസ്ഥാന ഫോർമുല ഉപയോഗിച്ച് വേഗത്തിൽ പരിഹരിക്കുക.\n3. Common mistake ഒഴിവാക്കി ഉത്തരം ഓപ്ഷനുകളുമായി ഒത്തുനോക്കുക.\n\nചോദ്യം: "$message" — വേണമെങ്കിൽ ഓപ്ഷനുകൾ കൂടി നൽകൂ, ഞാൻ ഘട്ടം ഘട്ടമായി വിശദീകരിക്കാം.';
       case 'hi':
-        return '${topicLine}Examora स्टडी गाइड (Hindi):\n1. प्रश्न में दिए गए मुख्य मान और शर्तें पहचानें।\n2. अनुपात, प्रतिशत या शॉर्ट ट्रिक फॉर्मूला लागू करें।\n3. अंतिम उत्तर को विकल्पों से मिलाकर सत्यापित करें।\n\nआपका प्रश्न: "$message" — यदि आप विकल्प साझा करें तो मैं चरण-दर-चरण हल दे सकता हूँ।';
+        return '${topicLine}Examora स्टडी गाइड (Hindi):\n1. प्रश्न में दिए गए मुख्य मान और शर्तें पहचानें।\n2. अनुपात, प्रतिशत या शॉर्ट ट्रिक फॉर्मूला लागू करें और सावधानी से जांचें।\n3. अंतिम उत्तर को विकल्पों से मिलाकर सत्यापित करें।\n\nआपका प्रश्न: "$message" — यदि आप विकल्प साझा करें तो मैं चरण-दर-चरण हल दे सकता हूँ।';
       case 'ta':
-        return '${topicLine}Examora கற்றல் வழிகாட்டி (Tamil):\n1. கேள்வியில் உள்ள முக்கிய மதிப்புகளை முதலில் அடையாளம் காண்க.\n2. சதவீதம், விகிதம் அல்லது குறுக்கு வழியைப் பயன்படுத்தி தீர்க்கவும்.\n3. விடையை விருப்பங்களுடன் ஒப்பிட்டு உறுதிப்படுத்தவும்.\n\nகேள்வி: "$message" — விருப்பங்களைப் பகிர்ந்தால் படிப்படியாக விளக்குகிறேன்.';
+        return '${topicLine}Examora கற்றல் வழிகாட்டி (Tamil):\n1. கேள்வியில் உள்ள முக்கிய மதிப்புகளை முதலில் அடையாளம் காண்க.\n2. சதவீதம், விகிதம் அல்லது குறுக்கு வழியைப் பயன்படுத்தி தீர்க்கவும்.\n3. பொதுவான பிழைகளைத் தவிர்த்து விடையை உறுதிப்படுத்தவும்.\n\nகேள்வி: "$message" — விருப்பங்களைப் பகிர்ந்தால் படிப்படியாக விளக்குகிறேன்.';
       default:
-        return '${topicLine}Examora Step-by-Step Guide:\n1. Identify the given values and what the SSC CGL question asks you to find.\n2. Apply the core shortcut (ratio, percentage multiplier, or elimination rule).\n3. Double-check units and verify against the 4 options.\n\nYour prompt: "$message" — share the 4 options if you want a full worked-out solution.';
+        return '${topicLine}Examora Structured Teacher Guide:\n1. Easy Concept: Break "$topicName" into given values and target quantity.\n2. Core Rule & Example: Apply the standard ratio/multiplier or grammar check step by step.\n3. Shortcut + Caution: Use shortcuts only when base conditions hold; otherwise verify via basic steps.\n4. Quick Check: Share your 4 options or attempt for "$message" and I will analyse any mistake.';
     }
   }
 

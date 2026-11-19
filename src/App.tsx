@@ -111,6 +111,11 @@ const MainWorkspace: React.FC = () => {
             setHomeSubPage('dashboard');
             setActiveTab('home');
           }}
+          onOpenMockTests={() => {
+            closeAiTutor();
+            setLearnSubView('mock-tests');
+            setActiveTab('learn');
+          }}
         />
       );
     }

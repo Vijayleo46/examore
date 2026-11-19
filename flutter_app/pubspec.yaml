@@ -1,7 +1,7 @@
 name: examora
 description: Examora — SSC CGL AI Academy (Learn. Play. Practice. Achieve.)
 publish_to: 'none'
-version: 1.0.0+1
+version: 1.1.0+2
 
 environment:
   sdk: '>=3.4.0 <4.0.0'
@@ -41,3 +41,4 @@ flutter:
   assets:
     - assets/images/ocean_sunrays.jpg
     - assets/data/ssc_cgl_past_papers_2016_2026.json
+    - assets/data/ai_generated_practice.json

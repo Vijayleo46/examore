@@ -133,7 +133,7 @@ class _AuthScreenState extends State<AuthScreen> {
       }
     } catch (e) {
       setState(() {
-        _errorMsg = e.toString().replaceFirst('Exception: ', '');
+        _errorMsg = widget.authService.friendlyErrorMessage(e);
       });
     } finally {
       if (mounted) setState(() => _loading = false);

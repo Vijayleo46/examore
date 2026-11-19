@@ -481,19 +481,19 @@ export const PAST_PAPERS_2026: Question[] = [
     isVerified: false,
     isPublished: true,
     questionEn:
-      'Statements: All pens are books. Some books are novels. Conclusions: I. Some novels are pens. II. Some books are pens.',
+      'Statements: Some rivers are lakes. All lakes are oceans. Conclusions: I. Some rivers are oceans. II. All oceans are lakes.',
     optionsEn: [
       'Only conclusion I follows',
       'Only conclusion II follows',
       'Both conclusions I and II follow',
       'Neither I nor II follows',
     ],
-    correctIndex: 1,
+    correctIndex: 0,
     explanations: {
-      en: 'Since all pens are books, "Some books are pens" definitely follows (Conclusion II). No definite link is given between novels and pens, so Conclusion I does not follow.',
-      ml: 'എല്ലാ പേനകളും പുസ്തകങ്ങളാണ് എന്നതിനാൽ ചില പുസ്തകങ്ങൾ പേനകളാണ് (II) തീർച്ചയായും ശരിയാണ്.',
-      hi: 'सभी पेन किताबें हैं, इसलिए "कुछ किताबें पेन हैं" (निष्कर्ष II) निश्चित रूप से सही है।',
-      ta: 'அனைத்து பேனாக்களும் புத்தகங்கள் என்பதால் "சில புத்தகங்கள் பேனாக்கள்" (முடிவு II) நிச்சயமாகப் பொருந்தும்.',
+      en: 'Since some rivers are lakes and all lakes are inside oceans, those rivers are necessarily oceans (Conclusion I follows). All oceans need not be lakes (Conclusion II does not follow).',
+      ml: 'ചില നദികൾ തടാകങ്ങളാണ്, എല്ലാ തടാകങ്ങളും സമുദ്രങ്ങളാണ് എന്നതിനാൽ ചില നദികൾ സമുദ്രങ്ങളാണ് (I) ശരിയാണ്.',
+      hi: 'कुछ नदियाँ झीलें हैं और सभी झीलें महासागर हैं, अतः कुछ नदियाँ महासागर हैं (निष्कर्ष I) सत्य है।',
+      ta: 'சில ஆறுகள் ஏரிகள் மற்றும் அனைத்து ஏரிகளும் பெருங்கடல்கள் என்பதால் சில ஆறுகள் பெருங்கடல்கள் (முடிவு I) பொருந்தும்.',
     },
   },
   {

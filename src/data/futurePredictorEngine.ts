@@ -382,6 +382,7 @@ export function analyzeHistoricalPyqs(
     english: 0,
     ga: 0,
     computer: 0,
+    statistics: 0,
   };
   const difficultyCounts: Record<'Easy' | 'Medium' | 'Hard', number> = {
     Easy: 0,

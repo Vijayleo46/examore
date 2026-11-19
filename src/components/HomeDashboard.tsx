@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { LANGUAGES, SUBJECT_NAMES, UI_TEXT } from '../data/i18n';
-import { SSC_SYLLABUS } from '../data/sscCurriculum';
+import { COMPLETE_SSC_SYLLABUS } from '../data/sscMasterTeacher';
 import { formatTime12h } from '../lib/localNotifications';
 import { LearnSubView, PracticeSubView, SubjectId, VideoLesson } from '../types/examverse';
 import { VideoPlayerModal } from './VideoPlayerModal';
@@ -55,6 +55,8 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
     notificationPrefs,
     setActiveTab,
     openAiTutor,
+    openAiTeacherWithContext,
+    revisionDueTopics,
   } = useApp();
 
   const t = UI_TEXT[language];
@@ -91,8 +93,12 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
     Math.round((profile.studyMinutesToday / Math.max(1, profile.dailyGoalMinutes)) * 100)
   );
 
-  // Recommended topics based on lowest accuracy subjects
+  // Recommended topics based on weak/revision-due topics first, then lowest subject accuracy
   const recommendedTopics = useMemo(() => {
+    const revMatches = revisionDueTopics
+      .map((r) => COMPLETE_SSC_SYLLABUS.find((s) => s.id === r.topicId))
+      .filter((x): x is (typeof COMPLETE_SSC_SYLLABUS)[number] => Boolean(x));
+
     const subjects: SubjectId[] = ['quant', 'reasoning', 'english', 'ga', 'computer'];
     const sorted = [...subjects].sort((a, b) => {
       const sa = profile.subjectStats[a];
@@ -102,12 +108,18 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
       return accA - accB;
     });
     const weakSub = sorted[0];
-    const pending = SSC_SYLLABUS.filter(
-      (topic) => !profile.completedSyllabusTopics.includes(topic.id)
+    const pending = COMPLETE_SSC_SYLLABUS.filter(
+      (topic) => !topic.isJsoOnly && !profile.completedSyllabusTopics.includes(topic.id)
     );
     const weakMatches = pending.filter((tItem) => tItem.subject === weakSub);
-    return (weakMatches.length > 0 ? weakMatches : pending).slice(0, 3);
-  }, [profile.subjectStats, profile.completedSyllabusTopics]);
+    const combined = [...revMatches, ...(weakMatches.length > 0 ? weakMatches : pending)];
+    const seen = new Set<string>();
+    return combined.filter((item) => {
+      if (seen.has(item.id)) return false;
+      seen.add(item.id);
+      return true;
+    }).slice(0, 3);
+  }, [profile.subjectStats, profile.completedSyllabusTopics, revisionDueTopics]);
 
   const greetingHandle = profile.username ? `@${profile.username}` : profile.displayName;
   const encouragingMessage =
@@ -470,22 +482,36 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
               </button>
             </div>
             <div className="space-y-2.5">
-              {recommendedTopics.map((topic) => (
-                <button
-                  key={topic.id}
-                  type="button"
-                  onClick={() => onOpenPracticeSection('drills')}
-                  className="w-full min-h-[52px] text-left p-3.5 rounded-2xl border border-[#8DE1D3]/45 dark:border-[#20C7C9]/20 hover:border-[#20C7C9] transition-colors cursor-pointer flex items-center justify-between gap-3"
-                >
-                  <div className="min-w-0">
-                    <div className="text-sm font-bold truncate">{topic.title}</div>
-                    <div className="text-xs text-[#075985] dark:text-[#8DE1D3]">
-                      {SUBJECT_NAMES[topic.subject][language]} · {topic.tier}
+              {recommendedTopics.map((topic) => {
+                const needsRev = revisionDueTopics.some((r) => r.topicId === topic.id);
+                return (
+                  <button
+                    key={topic.id}
+                    type="button"
+                    onClick={() =>
+                      openAiTeacherWithContext({
+                        subject: topic.subject,
+                        topic: topic.title,
+                        topicId: topic.id,
+                        mode: needsRev ? 'revision' : 'teach',
+                        autoStart: true,
+                      })
+                    }
+                    className="w-full min-h-[52px] text-left p-3.5 rounded-2xl border border-[#8DE1D3]/45 dark:border-[#20C7C9]/20 hover:border-[#20C7C9] transition-colors cursor-pointer flex items-center justify-between gap-3"
+                  >
+                    <div className="min-w-0">
+                      <div className="text-sm font-bold truncate">{topic.title}</div>
+                      <div className="text-xs text-[#075985] dark:text-[#8DE1D3]">
+                        {SUBJECT_NAMES[topic.subject][language]} · {topic.tier}
+                        {needsRev ? ' · Revision Due' : ''}
+                      </div>
                     </div>
-                  </div>
-                  <span className="text-xs font-bold text-[#20C7C9] shrink-0">Practice →</span>
-                </button>
-              ))}
+                    <span className="text-xs font-bold text-[#20C7C9] shrink-0">
+                      {needsRev ? 'Revise →' : 'Teach Me →'}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           </OceanGlassCard>
 

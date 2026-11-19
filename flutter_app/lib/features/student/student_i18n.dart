@@ -65,6 +65,8 @@ const List<StudentSubjectInfo> sscCglSubjects = [
 class StudentStrings {
   static String languageLabel(String code) {
     switch (code) {
+      case 'manglish':
+        return 'Manglish';
       case 'ml':
         return 'Malayalam';
       case 'hi':
@@ -130,6 +132,7 @@ class StudentStrings {
   }
 
   static String subjectTitle(String id) {
+    if (id == 'statistics') return 'Statistics (JSO Paper II · Tier 2)';
     for (final s in sscCglSubjects) {
       if (s.id == id) return s.title;
     }

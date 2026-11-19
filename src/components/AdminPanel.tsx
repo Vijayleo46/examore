@@ -64,6 +64,7 @@ const SUBJECT_LABELS: Record<SubjectId, string> = {
   english: 'English',
   ga: 'General Awareness',
   computer: 'Computer Knowledge',
+  statistics: 'Statistics (JSO Tier 2)',
 };
 
 function parseCsvLines(csvText: string): string[][] {
@@ -497,6 +498,7 @@ export const AdminPanel: React.FC<{ onSignOut: () => void }> = ({ onSignOut }) =
         english: yrQs.filter((q) => q.subject === 'english').length,
         ga: yrQs.filter((q) => q.subject === 'ga').length,
         computer: yrQs.filter((q) => q.subject === 'computer').length,
+        statistics: yrQs.filter((q) => q.subject === 'statistics').length,
       };
       return { year: yr, total: yrQs.length, t1, t2, official, bySub };
     });

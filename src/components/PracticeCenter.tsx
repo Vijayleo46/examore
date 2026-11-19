@@ -32,6 +32,7 @@ export const PracticeCenter: React.FC<PracticeCenterProps> = ({
   const {
     language,
     questions,
+    revisionListIds,
     recordQuestionResult,
     openTutorWithPrompt,
     addAdminQuestion,
@@ -40,15 +41,33 @@ export const PracticeCenter: React.FC<PracticeCenterProps> = ({
 
   const t = UI_TEXT[language];
   const [practiceSubject, setPracticeSubject] = useState<SubjectId>('quant');
+  const [practiceTopic, setPracticeTopic] = useState<string>('all');
+  const [revisionOnly, setRevisionOnly] = useState(false);
   const [practiceIdx, setPracticeIdx] = useState(0);
   const [practiceAnswers, setPracticeAnswers] = useState<Record<string, number>>({});
   const [generatingAI, setGeneratingAI] = useState(false);
   const [aiGenError, setAiGenError] = useState<string | null>(null);
 
+  const availableTopics = useMemo(() => {
+    const set = new Set<string>();
+    questions
+      .filter((q) => (isAdmin || q.isPublished !== false) && q.subject === practiceSubject)
+      .forEach((q) => {
+        if (q.topic) set.add(q.topic);
+      });
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [questions, practiceSubject, isAdmin]);
+
   const practicePool = useMemo(
     () =>
-      questions.filter((q) => (isAdmin || q.isPublished !== false) && q.subject === practiceSubject),
-    [questions, practiceSubject, isAdmin]
+      questions.filter((q) => {
+        if (!isAdmin && q.isPublished === false) return false;
+        if (q.subject !== practiceSubject) return false;
+        if (practiceTopic !== 'all' && q.topic !== practiceTopic) return false;
+        if (revisionOnly && !revisionListIds.includes(q.id)) return false;
+        return true;
+      }),
+    [questions, practiceSubject, practiceTopic, revisionOnly, revisionListIds, isAdmin]
   );
 
   const handleGenerateAiPractice = async () => {
@@ -162,12 +181,13 @@ export const PracticeCenter: React.FC<PracticeCenterProps> = ({
         <div className="space-y-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap items-center gap-2">
-              {(['quant', 'reasoning', 'english', 'ga', 'computer'] as SubjectId[]).map((sub) => (
+              {(['quant', 'reasoning', 'english', 'ga', 'computer', 'statistics'] as SubjectId[]).map((sub) => (
                 <button
                   key={sub}
                   type="button"
                   onClick={() => {
                     setPracticeSubject(sub);
+                    setPracticeTopic('all');
                     setPracticeIdx(0);
                   }}
                   className={`min-h-[44px] px-4 py-2 rounded-xl text-xs font-bold border transition-colors cursor-pointer ${
@@ -181,19 +201,53 @@ export const PracticeCenter: React.FC<PracticeCenterProps> = ({
               ))}
             </div>
 
-            <button
-              type="button"
-              disabled={generatingAI}
-              onClick={handleGenerateAiPractice}
-              className="min-h-[44px] inline-flex items-center gap-2 px-4 py-2 rounded-xl border-2 border-[#20C7C9] text-[#075985] dark:text-[#55D6D0] text-xs font-bold hover:bg-[#20C7C9]/10 disabled:opacity-50 cursor-pointer"
-            >
-              {generatingAI ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Sparkles className="w-4 h-4" />
-              )}
-              More Practice Questions
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                aria-label="Filter by topic"
+                value={practiceTopic}
+                onChange={(e) => {
+                  setPracticeTopic(e.target.value);
+                  setPracticeIdx(0);
+                }}
+                className="min-h-[44px] px-3 py-2 rounded-xl border border-[#8DE1D3]/60 dark:border-[#20C7C9]/30 bg-white/90 dark:bg-[#073B50]/90 text-xs font-bold text-[#062B3D] dark:text-[#F3FAFA]"
+              >
+                <option value="all">All Topics ({availableTopics.length})</option>
+                {availableTopics.map((tp) => (
+                  <option key={tp} value={tp}>
+                    {tp}
+                  </option>
+                ))}
+              </select>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setRevisionOnly((v) => !v);
+                  setPracticeIdx(0);
+                }}
+                className={`min-h-[44px] px-3.5 py-2 rounded-xl border text-xs font-bold cursor-pointer ${
+                  revisionOnly
+                    ? 'border-[#FF8B78] bg-[#FF8B78]/20 text-[#9A2D1F] dark:text-[#FF8B78]'
+                    : 'border-[#8DE1D3]/50 dark:border-[#20C7C9]/25 bg-white/80 dark:bg-[#073B50]/70 text-[#075985] dark:text-[#8DE1D3]'
+                }`}
+              >
+                Wrong-Answer Revision ({revisionListIds.length})
+              </button>
+
+              <button
+                type="button"
+                disabled={generatingAI}
+                onClick={handleGenerateAiPractice}
+                className="min-h-[44px] inline-flex items-center gap-2 px-4 py-2 rounded-xl border-2 border-[#20C7C9] text-[#075985] dark:text-[#55D6D0] text-xs font-bold hover:bg-[#20C7C9]/10 disabled:opacity-50 cursor-pointer"
+              >
+                {generatingAI ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Sparkles className="w-4 h-4" />
+                )}
+                More Practice Questions
+              </button>
+            </div>
           </div>
 
           {aiGenError && (
@@ -264,7 +318,7 @@ export const PracticeCenter: React.FC<PracticeCenterProps> = ({
                             const ok = oi === q.correctIndex;
                             if (ok) soundFX.playCorrect();
                             else soundFX.playWrong();
-                            recordQuestionResult(q.subject, ok, 20);
+                            recordQuestionResult(q.subject, ok, 20, q.id);
                           }}
                           className={`w-full min-h-[52px] text-left px-4 py-3 rounded-2xl border-2 text-sm transition-colors flex items-center justify-between gap-3 cursor-pointer ${cls}`}
                         >

@@ -1,0 +1,14 @@
+{
+  "name": "examora-functions",
+  "description": "Cloud Functions for Examora SSC CGL AI Academy",
+  "version": "1.1.0",
+  "engines": {
+    "node": "20"
+  },
+  "main": "index.js",
+  "dependencies": {
+    "@google/genai": "^1.0.0",
+    "firebase-admin": "^13.0.0",
+    "firebase-functions": "^6.2.0"
+  }
+}

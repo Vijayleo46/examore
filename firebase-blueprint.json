@@ -12,7 +12,7 @@
         "fullName": { "type": "string", "minLength": 1, "maxLength": 80 },
         "email": { "type": "string", "maxLength": 160 },
         "profileImage": { "type": "string", "maxLength": 500 },
-        "preferredLanguage": { "type": "string", "enum": ["en", "ml", "hi", "ta"] },
+        "preferredLanguage": { "type": "string", "enum": ["en", "ml", "manglish", "hi", "ta"] },
         "targetPost": { "type": "string", "maxLength": 100 },
         "dailyGoalMinutes": { "type": "integer" },
         "xp": { "type": "integer" },
@@ -227,7 +227,7 @@
         "role": { "type": "string", "enum": ["user", "assistant"] },
         "message": { "type": "string", "minLength": 1, "maxLength": 8000 },
         "timestamp": { "type": "string", "maxLength": 64 },
-        "language": { "type": "string", "enum": ["en", "ml", "hi", "ta"] }
+        "language": { "type": "string", "enum": ["en", "ml", "manglish", "hi", "ta"] }
       },
       "required": ["messageId", "role", "message", "timestamp", "language"]
     },
@@ -268,7 +268,7 @@
         "hoursPerDay": { "type": "number" },
         "examTarget": { "type": "string", "maxLength": 80 },
         "examDate": { "type": "string", "maxLength": 40 },
-        "preferredLanguage": { "type": "string", "enum": ["en", "ml", "hi", "ta"] },
+        "preferredLanguage": { "type": "string", "enum": ["en", "ml", "manglish", "hi", "ta"] },
         "blocks": { "type": "array" },
         "updatedAt": { "type": "string", "maxLength": 64 }
       },
@@ -377,7 +377,7 @@
         "questionId": { "type": "string", "minLength": 1, "maxLength": 100 },
         "examYear": { "type": "integer" },
         "tier": { "type": "string", "enum": ["Tier 1", "Tier 2"] },
-        "subject": { "type": "string", "enum": ["quant", "reasoning", "english", "ga", "computer"] },
+        "subject": { "type": "string", "enum": ["quant", "reasoning", "english", "ga", "computer", "statistics"] },
         "topic": { "type": "string", "minLength": 1, "maxLength": 80 },
         "difficulty": { "type": "string", "enum": ["Easy", "Medium", "Hard"] },
         "questionEn": { "type": "string", "minLength": 1, "maxLength": 1200 },
@@ -404,7 +404,7 @@
       "type": "object",
       "properties": {
         "categoryId": { "type": "string", "minLength": 1, "maxLength": 100 },
-        "subject": { "type": "string", "enum": ["quant", "reasoning", "english", "ga", "computer"] },
+        "subject": { "type": "string", "enum": ["quant", "reasoning", "english", "ga", "computer", "statistics"] },
         "topic": { "type": "string", "minLength": 1, "maxLength": 80 },
         "tier": { "type": "string", "enum": ["Tier 1", "Tier 2"] },
         "targetYear": { "type": "integer" },

@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:ui' show FontFeature;
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:video_player/video_player.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/ocean_components.dart';
@@ -71,10 +73,13 @@ class _MockTestRunnerScreenState extends State<MockTestRunnerScreen> {
   int _wrong = 0;
   int _skipped = 0;
   int _accuracy = 0;
+  int _timeTakenSec = 0;
   _ReviewFilter _reviewFilter = _ReviewFilter.all;
 
   String get _draftKey =>
       '${widget.uid}::${(widget.mockTest['testId'] ?? widget.mockTest['id'] ?? 'mock_1')}';
+  String get _prefsDraftKey =>
+      'examora_mock_draft_${_draftKey.replaceAll(RegExp(r'[^a-zA-Z0-9_\-]'), '_')}';
 
   @override
   void initState() {
@@ -90,17 +95,62 @@ class _MockTestRunnerScreenState extends State<MockTestRunnerScreen> {
     } else {
       _remainingSec = _totalDurationSec;
     }
-    _loadQuestions();
+    _restorePersistentDraft().then((_) => _loadQuestions());
+  }
+
+  Future<void> _restorePersistentDraft() async {
+    if (_answers.isNotEmpty) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_prefsDraftKey);
+      if (raw != null && raw.isNotEmpty) {
+        final decoded = jsonDecode(raw);
+        if (decoded is Map) {
+          final rem = int.tryParse('${decoded['remainingSec'] ?? 0}') ?? 0;
+          if (rem > 10 && mounted) {
+            final ansMap = decoded['answers'];
+            if (ansMap is Map) {
+              ansMap.forEach((k, v) {
+                final ki = int.tryParse(k.toString());
+                final vi = int.tryParse(v.toString());
+                if (ki != null && vi != null) _answers[ki] = vi;
+              });
+            }
+            final flagList = decoded['flagged'];
+            if (flagList is List) {
+              for (final f in flagList) {
+                final fi = int.tryParse(f.toString());
+                if (fi != null) _flagged.add(fi);
+              }
+            }
+            _currentIndex = int.tryParse('${decoded['currentIndex'] ?? 0}') ?? 0;
+            _remainingSec = rem;
+          }
+        }
+      }
+    } catch (_) {}
   }
 
   void _saveDraft() {
     if (_submitted || _questions.isEmpty) return;
+    final safeIdx = _currentIndex.clamp(0, _questions.length - 1);
     _draftStore[_draftKey] = _MockDraft(
       answers: Map<int, int>.from(_answers),
       flagged: Set<int>.from(_flagged),
-      currentIndex: _currentIndex.clamp(0, _questions.length - 1),
+      currentIndex: safeIdx,
       remainingSec: _remainingSec,
     );
+    SharedPreferences.getInstance().then((prefs) {
+      prefs.setString(
+        _prefsDraftKey,
+        jsonEncode({
+          'answers': _answers.map((k, v) => MapEntry(k.toString(), v)),
+          'flagged': _flagged.toList(),
+          'currentIndex': safeIdx,
+          'remainingSec': _remainingSec,
+        }),
+      );
+    }).catchError((_) => false);
   }
 
   @override
@@ -242,6 +292,7 @@ class _MockTestRunnerScreenState extends State<MockTestRunnerScreen> {
     int correct = 0;
     int wrong = 0;
     int skipped = 0;
+    final wrongIds = <String>[];
     final Map<String, Map<String, int>> breakdown = {};
 
     for (int i = 0; i < _questions.length; i++) {
@@ -260,6 +311,8 @@ class _MockTestRunnerScreenState extends State<MockTestRunnerScreen> {
           breakdown[subj]!['correct'] = (breakdown[subj]!['correct'] ?? 0) + 1;
         } else {
           wrong++;
+          final qId = (q['id'] ?? '').toString();
+          if (qId.isNotEmpty) wrongIds.add(qId);
         }
       }
     }
@@ -284,10 +337,16 @@ class _MockTestRunnerScreenState extends State<MockTestRunnerScreen> {
         accuracy: acc,
         timeTakenSec: timeTaken,
         subjectBreakdown: breakdown,
+        wrongQuestionIds: wrongIds,
       );
     } catch (_) {
       // Allow viewing results locally even if offline during submission
     }
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_prefsDraftKey);
+    } catch (_) {}
 
     if (mounted) {
       _draftStore.remove(_draftKey);
@@ -298,6 +357,7 @@ class _MockTestRunnerScreenState extends State<MockTestRunnerScreen> {
         _wrong = wrong;
         _skipped = skipped;
         _accuracy = acc;
+        _timeTakenSec = timeTaken;
         _submitting = false;
         _submitted = true;
       });
@@ -675,13 +735,22 @@ class _MockTestRunnerScreenState extends State<MockTestRunnerScreen> {
                         fontWeight: FontWeight.w600,
                       ),
                     ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Time: ${_formatTimer(_timeTakenSec)} · Avg Speed: ${(_correct + _wrong) > 0 ? (_timeTakenSec / (_correct + _wrong)).round() : 0}s/Q',
+                      style: const TextStyle(
+                        color: OceanColors.aqua,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
                     const SizedBox(height: 6),
                     Text(
                       _accuracy >= 70
                           ? 'Great momentum! Keep sharpening your speed.'
-                          : 'Good effort! Review the wrong answers below to boost accuracy.',
+                          : 'Missed questions were saved to Revision. Review explanations below!',
                       style: const TextStyle(
-                        color: OceanColors.aqua,
+                        color: OceanColors.seaGlass,
                         fontSize: 12,
                       ),
                     ),

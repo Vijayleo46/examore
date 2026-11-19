@@ -5,14 +5,14 @@ export type SubjectId =
   | 'reasoning'
   | 'english'
   | 'ga'
-  | 'computer';
+  | 'computer'
+  | 'statistics';
 
 export type MainTab =
   | 'home'
   | 'learn'
   | 'practice'
   | 'pyqs'
-  | 'repeats'
   | 'predictor'
   | 'analytics'
   | 'profile';
@@ -23,29 +23,97 @@ export type PracticeSubView = 'drills' | 'pyqs' | 'games';
 
 export type AnswerVerificationStatus = 'official' | 'unofficial' | 'needs_verification';
 
-export interface RepeatPaperOccurrence {
-  year: number;
-  tier: 'Tier 1' | 'Tier 2';
-  examDate: string;
-  shift: string;
-  paperRef: string;
-  answerStatus: AnswerVerificationStatus;
-  variantNote?: string;
-}
+export type TeachingLanguageStyle = 'en' | 'ml' | 'manglish' | 'hi' | 'ta';
 
-export interface RepeatedQuestionEntry {
-  id: string;
+export type TopicMasteryStatus =
+  | 'not_started'
+  | 'learning'
+  | 'practicing'
+  | 'strong'
+  | 'revision_needed';
+
+export type DifficultyStage = 'easy' | 'medium' | 'exam';
+
+export type TeacherMode =
+  | 'teach'
+  | 'practice'
+  | 'pyq'
+  | 'mock'
+  | 'revision'
+  | 'doubt'
+  | 'daily';
+
+export interface TopicMasteryRecord {
+  topicId: string;
   subject: SubjectId;
   topic: string;
-  difficulty: 'Easy' | 'Medium' | 'Hard';
-  questionEn: string;
-  optionsEn: [string, string, string, string];
+  status: TopicMasteryStatus;
+  level: DifficultyStage;
+  attempted: number;
+  correct: number;
+  wrongCount: number;
+  lastWrongReason?: string;
+  needsRevision: boolean;
+  updatedAt: string;
+}
+
+export interface AiTeacherPrefill {
+  subject?: SubjectId;
+  topic?: string;
+  topicId?: string;
+  mode?: TeacherMode;
+  level?: DifficultyStage;
+  autoStart?: boolean;
+  prompt?: string;
+}
+
+export interface TeacherLessonData {
+  topic: string;
+  subject: SubjectId;
+  level: DifficultyStage;
+  easyExplanation: string;
+  ruleOrFormula: string;
+  workedExample: {
+    problem: string;
+    steps: string[];
+    finalAnswer: string;
+  };
+  examShortcut: string;
+  whenNotToUseShortcut: string;
+  commonMistake: string;
+  quickCheckPrompt: string;
+}
+
+export interface TeacherPracticeQuestion {
+  id: string;
+  provenance: 'AUTHENTIC_PYQ' | 'GENERATED_PRACTICE';
+  subject: SubjectId;
+  topic: string;
+  level: DifficultyStage;
+  question: string;
+  options: [string, string, string, string];
   correctIndex: number;
-  correctAnswerText: string;
-  explanationEn: string;
-  shortcutMethod?: string;
-  yearsAppeared: number[];
-  occurrences: RepeatPaperOccurrence[];
+  hint1: string;
+  hint2: string;
+  fullSolution: string;
+  memoryTip: string;
+  pyqMeta?: {
+    questionId: string;
+    year: number;
+    tier: string;
+    examDate?: string;
+    shift?: string;
+    verificationStatus: string;
+  };
+}
+
+export interface MistakeAnalysisData {
+  isCorrect: boolean;
+  whyWrongOrRight: string;
+  simpleReteach: string;
+  memoryTrick: string;
+  nextAction: 'step_down' | 'stay' | 'level_up';
+  checkQuestion: string;
 }
 
 export interface NotificationPreferences {

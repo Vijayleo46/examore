@@ -9,6 +9,8 @@ import 'student_i18n.dart';
 import 'student_mock_runner.dart';
 import 'student_practice_tab.dart';
 import 'student_tutor_screen.dart';
+import 'ssc_master_curriculum.dart';
+import 'pyq_archive_loader.dart';
 import 'pyq_library_screen.dart';
 import 'ocean_quest_data.dart';
 import 'ocean_quest_screen.dart';
@@ -85,14 +87,20 @@ class _StudentShellState extends State<StudentShell> {
     required String language,
     String? prompt,
     String? topic,
+    String? subject,
+    String? mode,
   }) {
+    final uid = widget.session.user?.uid ?? '';
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => StudentTutorScreen(
+          uid: uid.isEmpty ? null : uid,
           firestoreService: widget.firestoreService,
           initialLanguage: language,
           initialPrompt: prompt,
           contextTopic: topic,
+          initialSubject: subject,
+          initialMode: mode,
           onGoHome: () => setState(() => _tabIndex = 0),
         ),
       ),
@@ -156,6 +164,7 @@ class _StudentShellState extends State<StudentShell> {
     required String uid,
     required Map<String, dynamic> mockTest,
     required String language,
+    List<Map<String, dynamic>>? initialQuestions,
   }) {
     Navigator.of(context).push(
       MaterialPageRoute(
@@ -164,6 +173,7 @@ class _StudentShellState extends State<StudentShell> {
           mockTest: mockTest,
           preferredLanguage: language,
           firestoreService: widget.firestoreService,
+          initialQuestions: initialQuestions,
           onGoHome: () => setState(() => _tabIndex = 0),
         ),
       ),
@@ -265,8 +275,19 @@ class _StudentShellState extends State<StudentShell> {
             onDismissTip: () => setState(() => _showLearnTip = false),
             onOpenLesson: (lesson, done) =>
                 _openVideoLesson(uid: uid, lesson: lesson, isCompleted: done),
-            onLaunchMock: (mock) =>
-                _launchMockTest(uid: uid, mockTest: mock, language: language),
+            onLaunchMock: (mock, {List<Map<String, dynamic>>? initialQuestions}) =>
+                _launchMockTest(
+              uid: uid,
+              mockTest: mock,
+              language: language,
+              initialQuestions: initialQuestions,
+            ),
+            onTeachTopic: (subject, topic) => _openTutor(
+              language: language,
+              subject: subject,
+              topic: topic,
+              mode: 'teach',
+            ),
           ),
           StudentPracticeTab(
             uid: uid,
@@ -1156,7 +1177,11 @@ class _StudentLearnTab extends StatelessWidget {
   final bool showTip;
   final VoidCallback onDismissTip;
   final void Function(Map<String, dynamic> lesson, bool isDone) onOpenLesson;
-  final void Function(Map<String, dynamic> mockTest) onLaunchMock;
+  final void Function(
+    Map<String, dynamic> mockTest, {
+    List<Map<String, dynamic>>? initialQuestions,
+  }) onLaunchMock;
+  final void Function(String subject, String topic) onTeachTopic;
 
   const _StudentLearnTab({
     required this.uid,
@@ -1169,16 +1194,59 @@ class _StudentLearnTab extends StatelessWidget {
     required this.onDismissTip,
     required this.onOpenLesson,
     required this.onLaunchMock,
+    required this.onTeachTopic,
   });
+
+  Future<void> _launchQuickOfflineMock(
+    BuildContext context, {
+    required String tier,
+    required int questionCount,
+    required int durationMinutes,
+    String subject = 'all',
+  }) async {
+    final bundled = await PyqArchiveLoader.loadBundledPastPapers();
+    final picked = PyqArchiveLoader.buildMockSet(
+      pool: bundled,
+      tier: tier,
+      subject: subject,
+      limit: questionCount,
+    );
+    if (picked.isEmpty) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No matching archive questions found for this preset.'),
+          ),
+        );
+      }
+      return;
+    }
+    onLaunchMock(
+      {
+        'id': 'offline_${tier.toLowerCase().replaceAll(' ', '')}_${subject}_${DateTime.now().millisecondsSinceEpoch}',
+        'testId': 'offline_${tier.toLowerCase().replaceAll(' ', '')}_$subject',
+        'title': subject == 'all'
+            ? 'SSC CGL $tier Practice Mock (${picked.length} Qs)'
+            : '${StudentStrings.subjectTitle(subject)} $tier Mock (${picked.length} Qs)',
+        'category': tier,
+        'durationMinutes': durationMinutes,
+        'totalMarks': picked.length * (tier == 'Tier 2' ? 3 : 2),
+        'negativeMarking': tier == 'Tier 2' ? 1.0 : 0.5,
+      },
+      initialQuestions: picked,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final completedList = (profile['completedLessons'] as List<dynamic>? ?? [])
         .map((e) => e.toString())
         .toSet();
+    final syllabusSubject = selectedSubject == 'all' ? 'quant' : selectedSubject;
+    final syllabusTopics = getSyllabusTopicsForSubject(syllabusSubject);
 
     return DefaultTabController(
-      length: 2,
+      length: 3,
       child: Column(
         children: [
           if (showTip)
@@ -1187,7 +1255,7 @@ class _StudentLearnTab extends StatelessWidget {
               child: OceanFirstTimeTip(
                 title: 'Beginner-friendly lessons',
                 message:
-                    'Pick a subject below to view short lessons with durations, or take an Official Mock Test when you feel ready.',
+                    'Pick a subject below to view short lessons, take Mock Tests, or explore the full Tier 1 & Tier 2 Syllabus with AI Teacher coaching.',
                 onDismiss: onDismissTip,
               ),
             ),
@@ -1197,6 +1265,7 @@ class _StudentLearnTab extends StatelessWidget {
             tabs: [
               Tab(text: 'Video Lessons'),
               Tab(text: 'Mock Tests'),
+              Tab(text: 'Syllabus & Pattern'),
             ],
           ),
           Expanded(
@@ -1315,81 +1384,511 @@ class _StudentLearnTab extends StatelessWidget {
                     ),
                   ],
                 ),
-                StreamBuilder(
-                  stream: firestoreService.streamPublishedMockTests(),
-                  builder: (context, snap) {
-                    if (!snap.hasData) {
-                      return const Center(child: CircularProgressIndicator());
-                    }
-                    final docs = snap.data!.docs;
-                    if (docs.isEmpty) {
-                      return const Center(
-                        child: Text('Published mock tests appear here.'),
-                      );
-                    }
-                    return ListView.builder(
-                      padding: const EdgeInsets.all(16),
-                      itemCount: docs.length,
-                      itemBuilder: (_, i) {
-                        final m = {'id': docs[i].id, ...docs[i].data()};
-                        return Padding(
-                          padding: const EdgeInsets.only(bottom: 12),
-                          child: OceanGlassCard(
-                            onTap: () => onLaunchMock(m),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
+                ListView(
+                  padding: const EdgeInsets.all(16),
+                  children: [
+                    OceanWaveHeaderCard(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Instant PYQ Mock Generator (Offline Ready)',
+                            style: TextStyle(
+                              color: OceanColors.foamWhite,
+                              fontSize: 15.5,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          const Text(
+                            'Balanced multi-subject mocks built from verified 2016–2026 SSC CGL PYQs with +2 / -0.5 scoring.',
+                            style: TextStyle(
+                              color: OceanColors.seaGlass,
+                              fontSize: 12.5,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              FilledButton.icon(
+                                onPressed: () => _launchQuickOfflineMock(
+                                  context,
+                                  tier: 'Tier 1',
+                                  questionCount: 25,
+                                  durationMinutes: 15,
+                                ),
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: OceanColors.turquoise,
+                                  foregroundColor: OceanColors.deepOcean,
+                                ),
+                                icon: const Icon(Icons.timer_outlined, size: 17),
+                                label: const Text('Tier 1 Sprint (25Q · 15m)'),
+                              ),
+                              OutlinedButton.icon(
+                                onPressed: () => _launchQuickOfflineMock(
+                                  context,
+                                  tier: 'Tier 2',
+                                  questionCount: 30,
+                                  durationMinutes: 25,
+                                ),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: OceanColors.foamWhite,
+                                  side: const BorderSide(color: OceanColors.seaGlass),
+                                ),
+                                icon: const Icon(Icons.military_tech_outlined, size: 17),
+                                label: const Text('Tier 2 Paper (30Q · 25m)'),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    StreamBuilder(
+                      stream: firestoreService.streamPublishedMockTests(),
+                      builder: (context, snap) {
+                        if (!snap.hasData) {
+                          return const Center(
+                            child: Padding(
+                              padding: EdgeInsets.all(24),
+                              child: CircularProgressIndicator(),
+                            ),
+                          );
+                        }
+                        final docs = snap.data!.docs;
+                        if (docs.isEmpty) {
+                          return const OceanGlassCard(
+                            child: Text(
+                              'Use the Instant PYQ Mock Generator above anytime. Published exam mocks added by teachers will also appear here.',
+                              style: TextStyle(color: OceanColors.textMuted),
+                            ),
+                          );
+                        }
+                        return Column(
+                          children: docs.map((d) {
+                            final m = {'id': d.id, ...d.data()};
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 12),
+                              child: OceanGlassCard(
+                                onTap: () => onLaunchMock(m),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    OceanStatusBadge(
-                                      icon: Icons.assignment_outlined,
-                                      label: (m['category'] ?? 'Tier 1').toString(),
-                                      color: OceanColors.oceanBlue,
+                                    Row(
+                                      children: [
+                                        OceanStatusBadge(
+                                          icon: Icons.assignment_outlined,
+                                          label: (m['category'] ?? 'Tier 1').toString(),
+                                          color: OceanColors.oceanBlue,
+                                        ),
+                                        const Spacer(),
+                                        Text(
+                                          '${m['durationMinutes'] ?? 15} mins · ${m['totalMarks'] ?? 50} marks',
+                                          style: const TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w700,
+                                            color: OceanColors.textMuted,
+                                          ),
+                                        ),
+                                      ],
                                     ),
-                                    const Spacer(),
+                                    const SizedBox(height: 10),
                                     Text(
-                                      '${m['durationMinutes'] ?? 15} mins · ${m['totalMarks'] ?? 50} marks',
+                                      (m['title'] ?? 'Mock Test').toString(),
                                       style: const TextStyle(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w700,
-                                        color: OceanColors.textMuted,
+                                        fontSize: 15.5,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                    if ((m['description'] ?? '').toString().isNotEmpty) ...[
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        m['description'].toString(),
+                                        style: const TextStyle(
+                                          fontSize: 12.5,
+                                          color: OceanColors.textMuted,
+                                        ),
+                                      ),
+                                    ],
+                                    const SizedBox(height: 12),
+                                    SizedBox(
+                                      width: double.infinity,
+                                      child: FilledButton.icon(
+                                        onPressed: () => onLaunchMock(m),
+                                        icon: const Icon(Icons.play_arrow_rounded),
+                                        label: const Text('Start Mock Test'),
                                       ),
                                     ),
                                   ],
                                 ),
-                                const SizedBox(height: 10),
-                                Text(
-                                  (m['title'] ?? 'Mock Test').toString(),
-                                  style: const TextStyle(
-                                    fontSize: 15.5,
-                                    fontWeight: FontWeight.w800,
+                              ),
+                            );
+                          }).toList(),
+                        );
+                      },
+                    ),
+                  ],
+                ),
+                // Tab 3: Complete SSC CGL Syllabus & Official Exam Pattern
+                StreamBuilder(
+                  stream: firestoreService.streamUserProgress(uid),
+                  builder: (context, progSnap) {
+                    final progData = progSnap.data?.data() ?? <String, dynamic>{};
+                    final completedTopics = Set<String>.from(
+                      (progData['completedTopics'] as List<dynamic>? ?? [])
+                          .map((e) => e.toString()),
+                    );
+                    final subjectProgress =
+                        (progData['subjectProgress'] as Map<String, dynamic>?) ?? {};
+                    final topicMastery =
+                        (subjectProgress['_topicMastery'] as Map<String, dynamic>?) ?? {};
+                    final totalSyllabusCount = completeSscSyllabus.length;
+                    final completedCount = completedTopics.length;
+                    final syllabusPct = totalSyllabusCount > 0
+                        ? (completedCount / totalSyllabusCount).clamp(0.0, 1.0)
+                        : 0.0;
+
+                    return ListView(
+                      padding: const EdgeInsets.all(16),
+                      children: [
+                        OceanGlassCard(
+                          borderColor: OceanColors.turquoise,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  const Text(
+                                    'SSC CGL Syllabus Completion',
+                                    style: TextStyle(
+                                      fontSize: 14.5,
+                                      fontWeight: FontWeight.w800,
+                                    ),
                                   ),
-                                ),
-                                if ((m['description'] ?? '').toString().isNotEmpty) ...[
-                                  const SizedBox(height: 4),
                                   Text(
-                                    m['description'].toString(),
+                                    '$completedCount / $totalSyllabusCount topics (${(syllabusPct * 100).round()}%)',
                                     style: const TextStyle(
-                                      fontSize: 12.5,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                      color: OceanColors.oceanBlue,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(99),
+                                child: LinearProgressIndicator(
+                                  value: syllabusPct,
+                                  minHeight: 8,
+                                  backgroundColor: OceanColors.borderLight,
+                                  color: OceanColors.turquoise,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: Row(
+                            children: sscMasterSubjects.map((s) {
+                              return Padding(
+                                padding: const EdgeInsets.only(right: 8),
+                                child: ChoiceChip(
+                                  label: Text(s.shortTitle),
+                                  selected: syllabusSubject == s.id,
+                                  onSelected: (_) => onSubjectChanged(s.id),
+                                ),
+                              );
+                            }).toList(),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        if (syllabusSubject == 'statistics')
+                          const Padding(
+                            padding: EdgeInsets.only(bottom: 10),
+                            child: OceanGlassCard(
+                              padding: EdgeInsets.all(12),
+                              borderColor: OceanColors.turquoise,
+                              child: Text(
+                                'JSO Paper II Only: Statistics in Tier 2 applies strictly to candidates applying for Junior Statistical Officer (JSO).',
+                                style: TextStyle(
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.w600,
+                                  color: OceanColors.oceanBlue,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ...syllabusTopics.map((topic) {
+                          final isTopicDone = completedTopics.contains(topic.id);
+                          final mastery =
+                              topicMastery[topic.title] as Map<String, dynamic>?;
+                          final needsRevision = mastery?['needsRevision'] == true;
+                          final masteryAcc = mastery?['accuracy'];
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: OceanGlassCard(
+                              borderColor: isTopicDone
+                                  ? OceanColors.emerald.withValues(alpha: 0.6)
+                                  : (needsRevision
+                                      ? OceanColors.coralAccent.withValues(alpha: 0.65)
+                                      : null),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Checkbox(
+                                        value: isTopicDone,
+                                        activeColor: OceanColors.emerald,
+                                        visualDensity: VisualDensity.compact,
+                                        onChanged: (checked) {
+                                          if (checked != null) {
+                                            firestoreService
+                                                .toggleSyllabusTopicCompleted(
+                                              uid: uid,
+                                              topicId: topic.id,
+                                              completed: checked,
+                                            );
+                                          }
+                                        },
+                                      ),
+                                      Expanded(
+                                        child: Text(
+                                          topic.title,
+                                          style: TextStyle(
+                                            fontSize: 14.5,
+                                            fontWeight: FontWeight.w800,
+                                            decoration: isTopicDone
+                                                ? TextDecoration.lineThrough
+                                                : null,
+                                          ),
+                                        ),
+                                      ),
+                                      Text(
+                                        '${topic.tier} · ${topic.weightage}',
+                                        style: const TextStyle(
+                                          fontSize: 11.5,
+                                          fontWeight: FontWeight.w700,
+                                          color: OceanColors.oceanBlue,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  if (needsRevision || masteryAcc != null) ...[
+                                    const SizedBox(height: 4),
+                                    Wrap(
+                                      spacing: 8,
+                                      children: [
+                                        if (needsRevision)
+                                          OceanStatusBadge(
+                                            icon: Icons.refresh_rounded,
+                                            label: 'Weak · Needs Revision',
+                                            color: OceanColors.coralAccent,
+                                          ),
+                                        if (masteryAcc != null)
+                                          OceanStatusBadge(
+                                            icon: Icons.insights_outlined,
+                                            label: 'AI Check: $masteryAcc%',
+                                            color: OceanColors.oceanBlue,
+                                          ),
+                                      ],
+                                    ),
+                                  ],
+                                  if (topic.tierNote != null) ...[
+                                    const SizedBox(height: 3),
+                                    Text(
+                                      topic.tierNote!,
+                                      style: const TextStyle(
+                                        fontSize: 11.5,
+                                        fontWeight: FontWeight.w600,
+                                        color: OceanColors.coralAccent,
+                                      ),
+                                    ),
+                                  ],
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    topic.keySubtopics.join(' · '),
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: OceanColors.textMuted,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 10),
+                                  Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      TextButton(
+                                        onPressed: () => firestoreService
+                                            .toggleSyllabusTopicCompleted(
+                                          uid: uid,
+                                          topicId: topic.id,
+                                          completed: !isTopicDone,
+                                        ),
+                                        child: Text(
+                                          isTopicDone
+                                              ? 'Completed ✓'
+                                              : 'Mark Completed',
+                                        ),
+                                      ),
+                                      FilledButton.tonalIcon(
+                                        onPressed: () => onTeachTopic(
+                                            syllabusSubject, topic.title),
+                                        icon: const Icon(Icons.auto_awesome,
+                                            size: 16),
+                                        label: const Text('Teach with AI'),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        }),
+                        const SizedBox(height: 8),
+                    OceanGlassCard(
+                      child: ExpansionTile(
+                        tilePadding: EdgeInsets.zero,
+                        title: const Text(
+                          'Official Exam Pattern (Tier 1 & Tier 2) + Cut-Offs',
+                          style: TextStyle(
+                            fontSize: 14.5,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        subtitle: const Text(
+                          'Sectional timing, -0.50 / -1 marking & 2023–2025 cut-off trends',
+                          style: TextStyle(fontSize: 12, color: OceanColors.textMuted),
+                        ),
+                        children: [
+                          const Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              'Tier 1 (100 Qs · 200 Marks · 60 Mins · -0.50 neg)',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w800,
+                                fontSize: 12.5,
+                                color: OceanColors.oceanBlue,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          ...sscTier1PatternRows.map(
+                            (r) => Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 3),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      r['section']!,
+                                      style: const TextStyle(fontSize: 12),
+                                    ),
+                                  ),
+                                  Text(
+                                    '${r['qs']} · ${r['marks']} · ${r['time']}',
+                                    style: const TextStyle(
+                                      fontSize: 11.5,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          const Divider(height: 20),
+                          const Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              'Tier 2 (Merit + Qualifying Computer & DEST)',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w800,
+                                fontSize: 12.5,
+                                color: OceanColors.oceanBlue,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          ...sscTier2PatternRows.map(
+                            (r) => Padding(
+                              padding: const EdgeInsets.only(bottom: 6),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    r['paper']!,
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                  Text(
+                                    '${r['module']} · ${r['marks']}',
+                                    style: const TextStyle(
+                                      fontSize: 11.5,
                                       color: OceanColors.textMuted,
                                     ),
                                   ),
                                 ],
-                                const SizedBox(height: 12),
-                                SizedBox(
-                                  width: double.infinity,
-                                  child: FilledButton.icon(
-                                    onPressed: () => onLaunchMock(m),
-                                    icon: const Icon(Icons.play_arrow_rounded),
-                                    label: const Text('Start Mock Test'),
-                                  ),
-                                ),
-                              ],
+                              ),
                             ),
                           ),
-                        );
-                      },
-                    );
+                          const Divider(height: 20),
+                          const Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              'Category Cut-Off Trends (Tier 1 /200 & Tier 2 2024 /450)',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w800,
+                                fontSize: 12.5,
+                                color: OceanColors.oceanBlue,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          ...sscCutoffTrendsRows.map(
+                            (c) => Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 3),
+                              child: Row(
+                                children: [
+                                  SizedBox(
+                                    width: 44,
+                                    child: Text(
+                                      c['category']!,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w800,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ),
+                                  Expanded(
+                                    child: Text(
+                                      '23: ${c['t1_2023']} · 24: ${c['t1_2024']} · 25: ${c['t1_2025']}',
+                                      style: const TextStyle(fontSize: 11.5),
+                                    ),
+                                  ),
+                                  Text(
+                                    'T2: ${c['t2_2024']}',
+                                    style: const TextStyle(
+                                      fontSize: 11.5,
+                                      fontWeight: FontWeight.w700,
+                                      color: OceanColors.oceanBlue,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                );
                   },
                 ),
               ],
@@ -1463,6 +1962,118 @@ class _StudentAnalyticsTab extends StatelessWidget {
               ),
             ],
           ),
+        ),
+        const SizedBox(height: 12),
+        StreamBuilder(
+          stream: firestoreService.streamUserProgress(uid),
+          builder: (context, progSnap) {
+            final progData = progSnap.data?.data() ?? <String, dynamic>{};
+            final revCount =
+                (progData['revisionListIds'] as List<dynamic>? ?? []).length;
+            final completedTopics =
+                (progData['completedTopics'] as List<dynamic>? ?? []).length;
+            return StreamBuilder(
+              stream: firestoreService.streamStudentAttempts(uid),
+              builder: (context, attSnap) {
+                final attDocs = attSnap.data?.docs ?? [];
+                var totalSec = 0;
+                var totalMockQs = 0;
+                for (final d in attDocs) {
+                  final dt = d.data();
+                  totalSec +=
+                      int.tryParse((dt['timeTakenSec'] ?? 0).toString()) ?? 0;
+                  final c =
+                      int.tryParse((dt['correctCount'] ?? 0).toString()) ?? 0;
+                  final w =
+                      int.tryParse((dt['wrongCount'] ?? 0).toString()) ?? 0;
+                  totalMockQs += c + w;
+                }
+                final avgSecPerQ =
+                    totalMockQs > 0 ? (totalSec / totalMockQs).round() : 0;
+
+                return OceanGlassCard(
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Avg Speed',
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                color: OceanColors.textMuted,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              avgSecPerQ > 0 ? '${avgSecPerQ}s / Q' : '—',
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w800,
+                                color: OceanColors.oceanBlue,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Revision Queue',
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                color: OceanColors.textMuted,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              '$revCount Qs',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w800,
+                                color: revCount > 0
+                                    ? OceanColors.coralAccent
+                                    : OceanColors.emerald,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Syllabus Done',
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                color: OceanColors.textMuted,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              '$completedTopics/${completeSscSyllabus.length}',
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w800,
+                                color: OceanColors.oceanBlue,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            );
+          },
         ),
         const SizedBox(height: 14),
         FutureBuilder<OceanQuestProgressModel>(
@@ -1552,7 +2163,7 @@ class _StudentAnalyticsTab extends StatelessWidget {
         const SizedBox(height: 8),
         OceanGlassCard(
           child: Column(
-            children: sscCglSubjects.map((s) {
+            children: sscMasterSubjects.map((s) {
               final raw = stats[s.id] as Map<String, dynamic>?;
               final subAtt = int.tryParse((raw?['attempted'] ?? 0).toString()) ?? 0;
               final subCor = int.tryParse((raw?['correct'] ?? 0).toString()) ?? 0;
@@ -1565,11 +2176,13 @@ class _StudentAnalyticsTab extends StatelessWidget {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text(
-                          s.title,
-                          style: const TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
+                        Expanded(
+                          child: Text(
+                            s.title,
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
                         ),
                         Text(
@@ -1804,7 +2417,7 @@ class _StudentProfileTab extends StatelessWidget {
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
-                value: ['en', 'ml', 'hi', 'ta'].contains(language)
+                value: ['en', 'ml', 'manglish', 'hi', 'ta'].contains(language)
                     ? language
                     : 'en',
                 decoration: const InputDecoration(
@@ -1813,6 +2426,7 @@ class _StudentProfileTab extends StatelessWidget {
                 ),
                 items: const [
                   DropdownMenuItem(value: 'en', child: Text('English')),
+                  DropdownMenuItem(value: 'manglish', child: Text('Manglish')),
                   DropdownMenuItem(value: 'ml', child: Text('Malayalam')),
                   DropdownMenuItem(value: 'hi', child: Text('Hindi')),
                   DropdownMenuItem(value: 'ta', child: Text('Tamil')),

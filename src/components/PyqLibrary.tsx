@@ -271,6 +271,7 @@ export const PyqLibrary: React.FC<PyqLibraryProps> = ({
       english: 0,
       ga: 0,
       computer: 0,
+      statistics: 0,
     };
 
     const incorrectCount = Object.values(pyqAttempts).filter((a) => !a.isCorrect).length;
@@ -281,7 +282,7 @@ export const PyqLibrary: React.FC<PyqLibraryProps> = ({
       YEARS_2016_2026.forEach((y) => {
         byYear[y] = archiveSummary.byYear[y] || 0;
       });
-      (['quant', 'reasoning', 'english', 'ga', 'computer'] as SubjectId[]).forEach((s) => {
+      (['quant', 'reasoning', 'english', 'ga', 'computer', 'statistics'] as SubjectId[]).forEach((s) => {
         bySubject[s] = archiveSummary.bySubject[s] || 0;
       });
       return {
